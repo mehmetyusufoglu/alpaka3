@@ -92,6 +92,18 @@ auto example(T_Cfg const& cfg, size_t numElements) -> int
     auto bufHostARGB = onHost::alloc<Data>(devHost, extent);
     auto bufHostScalarRGB = onHost::allocMirror(devHost, bufHostARGB);
 
+    // Allocate device memory buffers for ARGB and scalarRGB
+    auto bufAccARGB = onHost::allocMirror(devAcc, bufHostARGB);
+    auto bufAccScalarRGB = onHost::allocMirror(devAcc, bufHostScalarRGB);
+
+    // Instantiate the kernel function object
+    GrayscaleKernel kernel;
+
+           // Define frameExtent
+    Vec<size_t, 1u> frameExtent = 256u;
+    uint32_t elementsPerWorker = alpaka::getNumElemPerThread<Data>(alpaka::onHost::getApi(queue));
+    auto dataBlocking = onHost::FrameSpec{divCeil(extent, frameExtent * elementsPerWorker), frameExtent};
+
     // Fill input data with random RGB values
     std::random_device rd{};
     std::default_random_engine eng{rd()};
@@ -106,21 +118,26 @@ auto example(T_Cfg const& cfg, size_t numElements) -> int
                          | (static_cast<Data>(bufHostG[i]) << 8u) | static_cast<Data>(bufHostB[i]);
     }
 
-    // Allocate device memory buffers for ARGB and scalarRGB
-    auto bufAccARGB = onHost::allocMirror(devAcc, bufHostARGB);
-    auto bufAccScalarRGB = onHost::allocMirror(devAcc, bufHostScalarRGB);
+
+           // Enqueue the kernel execution task -WARMUP BEFAORE MAIN CALL
+    {
+        onHost::wait(queue);
+
+        onHost::enqueue(
+            queue,
+            exec,
+            dataBlocking,
+            KernelBundle{kernel, bufAccARGB.getMdSpan(), bufAccScalarRGB.getMdSpan(), static_cast<size_t>(extent[0])});
+        onHost::wait(queue); // Ensure kernel execution completes before proceeding
+
+
+    }
+
 
     // Copy Host -> Acc
     onHost::memcpy(queue, bufAccARGB, bufHostARGB);
     onHost::memcpy(queue, bufAccScalarRGB, bufHostScalarRGB);
 
-    // Instantiate the kernel function object
-    GrayscaleKernel kernel;
-
-    // Define frameExtent
-    Vec<size_t, 1u> frameExtent = 256u;
-    uint32_t elementsPerWorker = alpaka::getNumElemPerThread<Data>(alpaka::onHost::getApi(queue));
-    auto dataBlocking = onHost::FrameSpec{divCeil(extent, frameExtent * elementsPerWorker), frameExtent};
 
     // Enqueue the kernel execution task
     {
