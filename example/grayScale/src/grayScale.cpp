@@ -99,7 +99,7 @@ auto example(T_Cfg const& cfg, size_t numElements) -> int
     // Instantiate the kernel function object
     GrayscaleKernel kernel;
 
-           // Define frameExtent
+    // Define frameExtent
     Vec<size_t, 1u> frameExtent = 256u;
     uint32_t elementsPerWorker = alpaka::getNumElemPerThread<Data>(alpaka::onHost::getApi(queue));
     auto dataBlocking = onHost::FrameSpec{divCeil(extent, frameExtent * elementsPerWorker), frameExtent};
@@ -119,7 +119,10 @@ auto example(T_Cfg const& cfg, size_t numElements) -> int
     }
 
 
-           // Enqueue the kernel execution task -WARMUP BEFAORE MAIN CALL
+    // Copy Host -> Acc
+    onHost::memcpy(queue, bufAccARGB, bufHostARGB);
+    onHost::memcpy(queue, bufAccScalarRGB, bufHostScalarRGB);
+    // Enqueue the kernel execution task -WARMUP BEFAORE MAIN CALL
     {
         onHost::wait(queue);
 
@@ -129,14 +132,7 @@ auto example(T_Cfg const& cfg, size_t numElements) -> int
             dataBlocking,
             KernelBundle{kernel, bufAccARGB.getMdSpan(), bufAccScalarRGB.getMdSpan(), static_cast<size_t>(extent[0])});
         onHost::wait(queue); // Ensure kernel execution completes before proceeding
-
-
     }
-
-
-    // Copy Host -> Acc
-    onHost::memcpy(queue, bufAccARGB, bufHostARGB);
-    onHost::memcpy(queue, bufAccScalarRGB, bufHostScalarRGB);
 
 
     // Enqueue the kernel execution task
