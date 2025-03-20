@@ -1,5 +1,5 @@
 #
-# Copyright 2023 Benjamin Worpitz, Jan Stephan
+# Copyright 2025 Mehmet Yusufoglu, René Widera
 # SPDX-License-Identifier: ISC
 #
 
@@ -38,7 +38,7 @@ endif()
 
 alpaka_add_executable(
     ${_TARGET_NAME}
-    src/grayScaleSimd.cpp)
+        src/grayScale.cpp)
 target_link_libraries(
     ${_TARGET_NAME}
     PUBLIC alpaka::alpaka)
