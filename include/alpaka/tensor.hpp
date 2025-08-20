@@ -12,4 +12,4 @@
 #include <alpaka/tensor/ops/ElementwiseGeneric.hpp>
 
 // Main tensor library header
-// Includes all tensor functionality // namespace alpaka
+// Includes all tensor functionality

@@ -51,8 +51,9 @@ Tensor<T, Rank> binary(Exec const& exec, Device& device, Queue& queue, Tensor<T,
     auto n = a.size();
     auto frame = detail::makeFrame<Exec, Queue>(n);
     queue.enqueue(exec, frame, BinaryKernel{}, a.getDeviceBuffer(device), b.getDeviceBuffer(device), out.getDeviceBuffer(device), n, f);
+    ::alpaka::onHost::wait(queue);  // Wait for kernel completion
     out.markDeviceModified();
-    out.toHost(device, queue);
+    out.toHost(device, queue);  // Now safe to transfer results
     return out;
 }
 
@@ -65,8 +66,9 @@ Tensor<T, Rank> unary(Exec const& exec, Device& device, Queue& queue, Tensor<T, 
     auto n = in.size();
     auto frame = detail::makeFrame<Exec, Queue>(n);
     queue.enqueue(exec, frame, UnaryKernel{}, in.getDeviceBuffer(device), out.getDeviceBuffer(device), n, f);
+    ::alpaka::onHost::wait(queue);  // Wait for kernel completion
     out.markDeviceModified();
-    out.toHost(device, queue);
+    out.toHost(device, queue);  // Now safe to transfer results
     return out;
 }
 
@@ -130,8 +132,9 @@ void relu_inplace(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank
     auto n = t.size();
     auto frame = detail::makeFrame<Exec, Queue>(n);
     queue.enqueue(exec, frame, UnaryKernel{}, t.getDeviceBuffer(device), t.getDeviceBuffer(device), n, ReluOp{});
+    ::alpaka::onHost::wait(queue);  // Wait for kernel completion
     t.markDeviceModified();
-    t.toHost(device, queue);
+    t.toHost(device, queue);  // Now safe to transfer results
 }
 
 }}} // namespaces

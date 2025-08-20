@@ -78,10 +78,24 @@ namespace alpaka
             void deallocateDevice(){ device_buffer_.reset(); }
 
             template<typename Device, typename Queue>
-            void toDevice(Device& device, Queue& queue){ if(isDeviceAllocated() && hostDirty_){ auto& devBuf=getDeviceBuffer(device); ::alpaka::onHost::memcpy(queue, devBuf, *host_view_); hostDirty_=deviceDirty_=false; }}
+            void toDevice(Device& device, Queue& queue){ 
+                if(isDeviceAllocated() && hostDirty_){ 
+                    auto& devBuf=getDeviceBuffer(device); 
+                    ::alpaka::onHost::memcpy(queue, devBuf, *host_view_); 
+                    ::alpaka::onHost::wait(queue);  // Wait for transfer completion
+                    hostDirty_=deviceDirty_=false; 
+                }
+            }
 
             template<typename Device, typename Queue>
-            void toHost(Device& device, Queue& queue){ if(isDeviceAllocated() && deviceDirty_){ auto& devBuf=getDeviceBuffer(device); ::alpaka::onHost::memcpy(queue, *host_view_, devBuf); deviceDirty_=hostDirty_=false; }}
+            void toHost(Device& device, Queue& queue){ 
+                if(isDeviceAllocated() && deviceDirty_){ 
+                    auto& devBuf=getDeviceBuffer(device); 
+                    ::alpaka::onHost::memcpy(queue, *host_view_, devBuf); 
+                    ::alpaka::onHost::wait(queue);  // Wait for transfer completion
+                    deviceDirty_=hostDirty_=false; 
+                }
+            }
 
             template<typename Device>
             auto& getDeviceBuffer(Device& device){ if(!device_buffer_.has_value()) allocateDevice(device); if(deviceTypeInfo_ && *deviceTypeInfo_!=typeid(Device)) throw ::std::runtime_error("Device type mismatch in getDeviceBuffer"); using BufType=decltype(::alpaka::onHost::alloc<T>(device, ::alpaka::Vec<std::size_t,1u>{1})); return *::std::any_cast<BufType>(&device_buffer_); }
@@ -92,10 +106,26 @@ namespace alpaka
             [[deprecated("Use allocateDevice(device) with an explicit device")]] void allocateDevice() = delete;
 
             template<typename Device, typename Queue>
-            void ensureOnDevice(Device& device, Queue& queue){ allocateDevice(device); toDevice(device, queue); }
+            void ensureOnDevice(Device& device, Queue& queue){ 
+                allocateDevice(device); 
+                toDevice(device, queue);  // Now toDevice() waits for completion
+            }
 
-            T& operator()(::std::size_t idx){ assert(Rank==1 && idx < size()); hostDirty_=true; return (*host_view_)[idx]; }
-            const T& operator()(::std::size_t idx) const { assert(Rank==1 && idx < size()); return (*host_view_)[idx]; }
+            T& operator()(::std::size_t idx){ 
+                assert(Rank==1 && idx < size()); 
+                if(deviceDirty_) {
+                    throw ::std::runtime_error("Tensor modified on device but not synced to host. Call toHost() first.");
+                }
+                hostDirty_=true; 
+                return (*host_view_)[idx]; 
+            }
+            const T& operator()(::std::size_t idx) const { 
+                assert(Rank==1 && idx < size()); 
+                if(deviceDirty_) {
+                    throw ::std::runtime_error("Tensor modified on device but not synced to host. Call toHost() first.");
+                }
+                return (*host_view_)[idx]; 
+            }
 
             template<typename Device, typename Queue>
             void zero(Device& device, Queue& queue){ for(::std::size_t i=0;i<size();++i)(*host_view_)[i]=T{}; if(isDeviceAllocated()) toDevice(device, queue); hostDirty_=false; }
