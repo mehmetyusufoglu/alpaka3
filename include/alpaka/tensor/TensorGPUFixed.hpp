@@ -224,11 +224,9 @@ namespace alpaka
                 return *::std::any_cast<const BufType>(&device_buffer_);
             }
 
-            // Legacy methods for compatibility
-            void allocateDevice() {
-                auto hostDev = ::alpaka::onHost::makeHostDevice();
-                allocateDevice(hostDev);
-            }
+            // Removed legacy no-arg allocateDevice(): forcing caller to provide device prevents accidental host allocation.
+            [[deprecated("Use allocateDevice(device) with an explicit device to avoid implicit host allocation")]]
+            void allocateDevice() = delete;
 
             // Ensure data is present on device (alloc + upload if needed)
             template<typename Device, typename Queue>
