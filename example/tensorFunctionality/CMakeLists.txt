@@ -13,7 +13,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 ################################################################################
 # Project.
 
-set(_TARGET_NAME tensorExample)
+set(_TARGET_NAME tensorFunctionality)
 
 project(${_TARGET_NAME} LANGUAGES CXX)
 
@@ -37,7 +37,7 @@ endif()
 
 alpaka_add_executable(
     ${_TARGET_NAME}
-    src/tensorExample.cpp)
+    src/tensorFunctionality.cpp)
 target_link_libraries(
     ${_TARGET_NAME}
     PUBLIC alpaka::alpaka)
