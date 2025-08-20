@@ -53,7 +53,7 @@ Tensor<T, Rank> binary(Exec const& exec, Device& device, Queue& queue, Tensor<T,
     queue.enqueue(exec, frame, BinaryKernel{}, a.getDeviceBuffer(device), b.getDeviceBuffer(device), out.getDeviceBuffer(device), n, f);
     ::alpaka::onHost::wait(queue);  // Wait for kernel completion
     out.markDeviceModified();
-    out.toHost(device, queue);  // Now safe to transfer results
+    out.toHost(device, queue);  // Auto-sync to host (eager operation)
     return out;
 }
 
@@ -68,7 +68,7 @@ Tensor<T, Rank> unary(Exec const& exec, Device& device, Queue& queue, Tensor<T, 
     queue.enqueue(exec, frame, UnaryKernel{}, in.getDeviceBuffer(device), out.getDeviceBuffer(device), n, f);
     ::alpaka::onHost::wait(queue);  // Wait for kernel completion
     out.markDeviceModified();
-    out.toHost(device, queue);  // Now safe to transfer results
+    out.toHost(device, queue);  // Auto-sync to host (eager operation)
     return out;
 }
 
@@ -134,7 +134,7 @@ void relu_inplace(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank
     queue.enqueue(exec, frame, UnaryKernel{}, t.getDeviceBuffer(device), t.getDeviceBuffer(device), n, ReluOp{});
     ::alpaka::onHost::wait(queue);  // Wait for kernel completion
     t.markDeviceModified();
-    t.toHost(device, queue);  // Now safe to transfer results
+    t.toHost(device, queue);  // Auto-sync to host (eager operation)
 }
 
 }}} // namespaces

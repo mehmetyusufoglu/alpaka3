@@ -13,6 +13,11 @@
 #include <cassert>
 #include <any>
 #include <optional>
+
+namespace alpaka::tensor {
+    // Forward declaration
+    template<typename T, std::size_t Rank> class TensorView;
+}
 #include <typeinfo>
 #include <stdexcept>
 
@@ -140,7 +145,22 @@ namespace alpaka
             void markDeviceModified(){ deviceDirty_=true; }
             bool isShapeCompatible(const Tensor& o) const { for(::std::size_t i=0;i<Rank;++i) if(shape_[i]!=o.shape_[i]) return false; return true; }
             bool isDeviceCompatible(const Tensor&) const { return true; }
-            template<typename Queue> void wait(Queue& queue){ ::alpaka::onHost::wait(queue);}        };
+            template<typename Queue> void wait(Queue& queue){ ::alpaka::onHost::wait(queue);}
+            
+            // Create a lazy view of this tensor for efficient chaining
+            auto view() -> TensorView<T, Rank>;
+            
+            // Methods for lazy operation support
+            bool hasDeviceData() const { return deviceTypeInfo_ != nullptr; }
+            bool isHostCurrent() const { return !hostDirty_; }
+            bool isDeviceCurrent() const { return !deviceDirty_; }
+        };
+
+        // Implementation of view() method (needs to be after TensorView declaration)
+        template<typename T, std::size_t Rank>
+        auto Tensor<T, Rank>::view() -> TensorView<T, Rank> {
+            return TensorView<T, Rank>(*this);
+        }
 
         template<typename T> using Tensor1D = Tensor<T,1>; template<typename T> using Tensor2D = Tensor<T,2>;
         template<typename T> using Tensor3D = Tensor<T,3>; template<typename T> using Tensor4D = Tensor<T,4>;
