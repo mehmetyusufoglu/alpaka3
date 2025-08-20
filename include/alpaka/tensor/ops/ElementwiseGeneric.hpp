@@ -1,3 +1,10 @@
+/* Elementwise tensor operations with Alpaka queues
+ * 
+ * IMPORTANT: Understanding queue semantics is crucial for performance!
+ * See include/alpaka/tensor/QueueSemantics.hpp for detailed documentation
+ * on asynchronous execution, data dependencies, and synchronization patterns.
+ */
+
 #pragma once
 #include <alpaka/alpaka.hpp>
 #include <alpaka/tensor/TensorCore.hpp>
