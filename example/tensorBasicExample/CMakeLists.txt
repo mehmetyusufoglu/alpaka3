@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.25)
+project(tensorBasicExample LANGUAGES CXX)
+if(NOT TARGET alpaka::alpaka)
+    find_package(alpaka REQUIRED)
+endif()
+alpaka_add_executable(tensorBasicExample src/tensorBasicExample.cpp)
+target_link_libraries(tensorBasicExample PUBLIC alpaka::alpaka)
+set_target_properties(tensorBasicExample PROPERTIES FOLDER example)
