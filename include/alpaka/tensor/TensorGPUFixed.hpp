@@ -33,7 +33,9 @@ namespace alpaka
             ColumnMajor
         };
 
-        // GPU-accelerated tensor class with flexible device handling
+    // Tensor: host/device owning container.
+    // Summary: host ManagedView + lazy device buffer (std::any) + dirty flags for sync minimization.
+    // Rank kept for future N-D (currently flattened). Allocation & transfers require explicit Device.
         template<typename T, ::std::size_t Rank>
         class Tensor {
         public:
@@ -42,21 +44,31 @@ namespace alpaka
             static constexpr ::std::size_t rank = Rank;
 
         private:
+            // Tensor shape extents (size per dimension)
             Shape shape_;
-            // Host memory as an alpaka managed view (for memcpy compatibility across backends)
+            // Host memory managed view type alias (contiguous 1-D storage)
             using HostView = decltype(::alpaka::onHost::allocHost<T>(::alpaka::Vec<std::size_t, 1u>{1}));
+            // Optional host allocation (engaged once size known)
             ::std::optional<HostView> host_view_;
+            // Logical element type enum (future: dispatch, type conversions)
             DataType dtype_;
+            // Layout tag (row-major today; placeholder for future layouts)
             Layout layout_;
+            // Human-readable identifier
             ::std::string name_;
             
             // Device buffer - use optional to handle allocation state
             // Type-erased device buffer (ManagedView of arbitrary API) stored in-place
+            // Type-erased device view (ManagedView) allocated lazily
             ::std::any device_buffer_;
+            // Host modified since last toDevice()
             bool hostDirty_{true};
+            // Device modified since last toHost()
             bool deviceDirty_{false};
+            // Captured Device type (typeid) to enforce consistent usage
             const ::std::type_info* deviceTypeInfo_{nullptr};
 
+            // Compute total element count (product of shape dimensions)
             ::std::size_t calculateSize() const {
                 ::std::size_t size = 1;
                 for(::std::size_t i = 0; i < Rank; ++i) {
@@ -66,7 +78,7 @@ namespace alpaka
             }
 
         public:
-            // Constructor
+            // Constructor: allocate host view; device allocation deferred until needed.
             Tensor(Shape shape, 
                    DataType dtype = DataType::Float32,
                    Layout layout = Layout::RowMajor,
@@ -80,7 +92,7 @@ namespace alpaka
                 host_view_.emplace(::alpaka::onHost::allocHost<T>(::alpaka::Vec<std::size_t, 1u>{size}));
             }
 
-            // Copy constructor
+            // Copy constructor: deep-copy host data; device buffer intentionally NOT copied.
             Tensor(const Tensor& other)
                 : shape_(other.shape_)
                 , host_view_(::std::nullopt)
@@ -94,7 +106,7 @@ namespace alpaka
                 deviceDirty_ = false;
             }
 
-            // Assignment operator
+            // Copy assignment: deep-copy host; discard any existing device buffer to avoid stale copies.
             Tensor& operator=(const Tensor& other) {
                 if(this != &other) {
                     shape_ = other.shape_;
@@ -113,7 +125,7 @@ namespace alpaka
                 return *this;
             }
 
-            // Move constructor
+            // Move constructor: transfers ownership of host/device buffers & state flags.
             Tensor(Tensor&& other) noexcept
                 : shape_(other.shape_)
                 , host_view_(::std::move(other.host_view_))
@@ -128,7 +140,7 @@ namespace alpaka
                 other.deviceDirty_ = false;
             }
 
-            // Move assignment
+            // Move assignment: release current resources, take ownership from other.
             Tensor& operator=(Tensor&& other) noexcept {
                 if(this != &other) {
                     shape_ = other.shape_;
@@ -146,7 +158,7 @@ namespace alpaka
                 return *this;
             }
 
-            // Access methods
+            // Accessors --------------------------------------------------------------------
             const Shape& shape() const { return shape_; }
             ::std::size_t size() const { return calculateSize(); }
             ::std::size_t sizeBytes() const { return calculateSize() * sizeof(T); }
@@ -155,11 +167,12 @@ namespace alpaka
             DataType dtype() const { return dtype_; }
             Layout layout() const { return layout_; }
 
-            // Data access
+            // Raw host data pointers (avoid exposing device pointer intentionally).
             T* hostData() { return host_view_->data(); }
             const T* hostData() const { return host_view_->data(); }
 
-            // Device memory management - REAL GPU allocation!
+            // Device memory management ------------------------------------------------------
+            // allocateDevice(Device&): idempotent; enforces single device type.
             bool isDeviceAllocated() const { return device_buffer_.has_value(); }
 
             template<typename Device>
@@ -181,7 +194,9 @@ namespace alpaka
                 device_buffer_.reset();
             }
 
-            // Data transfer operations
+            // Data transfer operations ------------------------------------------------------
+            // toDevice: push host->device if hostDirty_. Clears both dirty flags (device now authoritative but unchanged).
+            // toHost:   pull device->host if deviceDirty_. Clears dirty flags.
         template<typename Device, typename Queue>
         void toDevice(Device& device, Queue& queue) {
                 if (isDeviceAllocated() && hostDirty_) {
@@ -203,7 +218,8 @@ namespace alpaka
                 }
             }
 
-            // Get device buffer for kernel operations
+            // Device buffer retrieval -------------------------------------------------------
+            // getDeviceBuffer allocates lazily then returns reference to concrete ManagedView stored in std::any.
             template<typename Device>
             auto& getDeviceBuffer(Device& device) {
                 if (!device_buffer_.has_value()) allocateDevice(device);
@@ -224,18 +240,18 @@ namespace alpaka
                 return *::std::any_cast<const BufType>(&device_buffer_);
             }
 
-            // Removed legacy no-arg allocateDevice(): forcing caller to provide device prevents accidental host allocation.
+            // Removed legacy no-arg allocateDevice(): callers must be explicit about target device.
             [[deprecated("Use allocateDevice(device) with an explicit device to avoid implicit host allocation")]]
             void allocateDevice() = delete;
 
-            // Ensure data is present on device (alloc + upload if needed)
+            // ensureOnDevice: convenience wrapper (alloc + conditional host->device sync).
             template<typename Device, typename Queue>
             void ensureOnDevice(Device& device, Queue& queue) {
                 allocateDevice(device);
                 toDevice(device, queue);
             }
 
-            // Element access
+            // Element access ----------------------------------------------------------------
             T& operator()(::std::size_t idx) {
                 assert(Rank == 1 && "Single index access only for 1D tensors");
                 assert(idx < size() && "Index out of bounds");
@@ -249,7 +265,7 @@ namespace alpaka
                 return (*host_view_)[idx];
             }
 
-            // Utility methods
+            // Utility methods ---------------------------------------------------------------
             template<typename Device, typename Queue>
             void zero(Device& device, Queue& queue) {
                 for(::std::size_t i=0;i<size();++i) (*host_view_)[i]=T{};
@@ -280,7 +296,7 @@ namespace alpaka
                 hostDirty_ = true;
             }
 
-            // Multi-dimensional element access
+            // Multi-dimensional element access (row-major flattening) -----------------------
             template<typename... Indices>
             T& at(Indices... indices) {
                 static_assert(sizeof...(indices) == Rank, "Number of indices must match tensor rank");
@@ -297,12 +313,12 @@ namespace alpaka
                 return (*host_view_)[flat_idx];
             }
 
-            // Mark device data modified externally (e.g., after a kernel write)
+            // Mark device data modified externally (e.g., after a kernel write) -------------
             void markDeviceModified() {
                 deviceDirty_ = true;
             }
 
-            // Compatibility checks
+            // Compatibility checks ---------------------------------------------------------
             bool isShapeCompatible(const Tensor& other) const {
                 for(::std::size_t i = 0; i < Rank; ++i) {
                     if (shape_[i] != other.shape_[i]) return false;
@@ -315,7 +331,7 @@ namespace alpaka
                 return true;
             }
 
-            // Synchronization
+            // Synchronization ---------------------------------------------------------------
             template<typename Queue>
             void wait(Queue& queue) {
                 ::alpaka::onHost::wait(queue);
