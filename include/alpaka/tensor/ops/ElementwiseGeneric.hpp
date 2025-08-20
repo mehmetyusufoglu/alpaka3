@@ -77,6 +77,11 @@ struct SubOp { template<typename V> ALPAKA_FN_HOST_ACC V operator()(V a, V b) co
 struct MulOp { template<typename V> ALPAKA_FN_HOST_ACC V operator()(V a, V b) const { return a * b; } };
 struct DivOp { template<typename V> ALPAKA_FN_HOST_ACC V operator()(V a, V b) const { return a / b; } };
 struct ReluOp { template<typename V> ALPAKA_FN_HOST_ACC V operator()(V v) const { return v > V{} ? v : V{}; } };
+// Scalar ops wrappers (functors capturing scalar value)
+template<typename S>
+struct AddScalarOp { S s; template<typename V> ALPAKA_FN_HOST_ACC V operator()(V a) const { return a + static_cast<V>(s); } };
+template<typename S>
+struct MulScalarOp { S s; template<typename V> ALPAKA_FN_HOST_ACC V operator()(V a) const { return a * static_cast<V>(s); } };
 
 // High-level wrappers
 
@@ -103,6 +108,18 @@ Tensor<T, Rank> div(Exec const& exec, Device& device, Queue& queue, Tensor<T, Ra
 template<typename T, std::size_t Rank, typename Exec, typename Device, typename Queue>
 Tensor<T, Rank> relu(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank>& in) {
     return unary<T, Rank>(exec, device, queue, in, ReluOp{}, "relu");
+}
+
+// sub/mul/div already provided via generic wrappers above
+
+template<typename T, std::size_t Rank, typename Exec, typename Device, typename Queue, typename S>
+Tensor<T, Rank> add_scalar(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank>& in, S scalar, const char* name="add_scalar") {
+    return unary<T, Rank>(exec, device, queue, in, AddScalarOp<S>{scalar}, name);
+}
+
+template<typename T, std::size_t Rank, typename Exec, typename Device, typename Queue, typename S>
+Tensor<T, Rank> mul_scalar(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank>& in, S scalar, const char* name="mul_scalar") {
+    return unary<T, Rank>(exec, device, queue, in, MulScalarOp<S>{scalar}, name);
 }
 
 // In-place ReLU
