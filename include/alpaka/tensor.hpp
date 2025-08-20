@@ -9,6 +9,7 @@
 
 // Operations
 #include <alpaka/tensor/ops/ElementwiseFixed.hpp>
+#include <alpaka/tensor/ops/ElementwiseGeneric.hpp>
 
 // Main tensor library header
 // Includes all tensor functionality // namespace alpaka
