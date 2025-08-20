@@ -47,6 +47,8 @@ namespace alpaka
             
             // Device buffer - use optional to handle allocation state
             ::std::optional<decltype(::alpaka::onHost::alloc<T>(::alpaka::onHost::makeHostDevice(), ::std::size_t{1}))> device_buffer_;
+            bool hostDirty_{true};
+            bool deviceDirty_{false};
 
             ::std::size_t calculateSize() const {
                 ::std::size_t size = 1;
@@ -79,6 +81,8 @@ namespace alpaka
                 , layout_(other.layout_)
                 , name_(other.name_ + "_copy") {
                 // Don't copy device buffer - require explicit allocation
+                hostDirty_ = true;
+                deviceDirty_ = false;
             }
 
             // Assignment operator
@@ -90,6 +94,41 @@ namespace alpaka
                     layout_ = other.layout_;
                     name_ = other.name_ + "_assigned";
                     device_buffer_.reset(); // Clear device allocation
+                    hostDirty_ = true;
+                    deviceDirty_ = false;
+                }
+                return *this;
+            }
+
+            // Move constructor
+            Tensor(Tensor&& other) noexcept
+                : shape_(other.shape_)
+                , host_data_(::std::move(other.host_data_))
+                , dtype_(other.dtype_)
+                , layout_(other.layout_)
+                , name_(::std::move(other.name_))
+                , device_buffer_(::std::move(other.device_buffer_))
+                , hostDirty_(other.hostDirty_)
+                , deviceDirty_(other.deviceDirty_) {
+                other.device_buffer_.reset();
+                other.hostDirty_ = true;
+                other.deviceDirty_ = false;
+            }
+
+            // Move assignment
+            Tensor& operator=(Tensor&& other) noexcept {
+                if(this != &other) {
+                    shape_ = other.shape_;
+                    host_data_ = ::std::move(other.host_data_);
+                    dtype_ = other.dtype_;
+                    layout_ = other.layout_;
+                    name_ = ::std::move(other.name_);
+                    device_buffer_ = ::std::move(other.device_buffer_);
+                    hostDirty_ = other.hostDirty_;
+                    deviceDirty_ = other.deviceDirty_;
+                    other.device_buffer_.reset();
+                    other.hostDirty_ = true;
+                    other.deviceDirty_ = false;
                 }
                 return *this;
             }
@@ -127,15 +166,19 @@ namespace alpaka
             // Data transfer operations
             template<typename Queue>
             void toDevice(Queue& queue) {
-                if (device_buffer_.has_value()) {
+                if (device_buffer_.has_value() && hostDirty_) {
                     ::alpaka::onHost::memcpy(queue, *device_buffer_, host_data_.data(), calculateSize());
+                    hostDirty_ = false;
+                    deviceDirty_ = false;
                 }
             }
 
             template<typename Queue>
             void toHost(Queue& queue) {
-                if (device_buffer_.has_value()) {
+                if (device_buffer_.has_value() && deviceDirty_) {
                     ::alpaka::onHost::memcpy(queue, host_data_.data(), *device_buffer_, calculateSize());
+                    deviceDirty_ = false;
+                    hostDirty_ = false;
                 }
             }
 
@@ -165,10 +208,18 @@ namespace alpaka
                 allocateDevice(device);
             }
 
+            // Ensure data is present on device (alloc + upload if needed)
+            template<typename Device, typename Queue>
+            void ensureOnDevice(const Device& device, Queue& queue) {
+                allocateDevice(device);
+                toDevice(queue);
+            }
+
             // Element access
             T& operator()(::std::size_t idx) {
                 assert(Rank == 1 && "Single index access only for 1D tensors");
                 assert(idx < host_data_.size() && "Index out of bounds");
+                hostDirty_ = true;
                 return host_data_[idx];
             }
 
@@ -185,11 +236,13 @@ namespace alpaka
                 if (device_buffer_.has_value()) {
                     toDevice(queue); // Sync to device
                 }
+                hostDirty_ = false;
             }
 
             void zero() {
                 ::std::fill(host_data_.begin(), host_data_.end(), T{});
                 // No device sync for legacy compatibility
+                hostDirty_ = true;
             }
 
             template<typename Queue>
@@ -198,11 +251,13 @@ namespace alpaka
                 if (device_buffer_.has_value()) {
                     toDevice(queue); // Sync to device
                 }
+                hostDirty_ = false;
             }
 
             void fill(const T& value) {
                 ::std::fill(host_data_.begin(), host_data_.end(), value);
                 // No device sync for legacy compatibility
+                hostDirty_ = true;
             }
 
             // Multi-dimensional element access
@@ -220,6 +275,11 @@ namespace alpaka
                 }
                 
                 return host_data_[flat_idx];
+            }
+
+            // Mark device data modified externally (e.g., after a kernel write)
+            void markDeviceModified() {
+                deviceDirty_ = true;
             }
 
             // Compatibility checks
