@@ -14,26 +14,22 @@ namespace alpaka
         namespace ops
         {
             // Elementwise addition kernel (following tutorial patterns)
-            template<typename TAcc>
             class ElementwiseAddKernel {
             public:
-                template<typename TBufA, typename TBufB, typename TBufR>
-                ALPAKA_FN_ACC void operator()(TAcc const& acc, TBufA a, TBufB b, TBufR result, ::std::size_t n) const {
-                    for(auto [index] : alpaka::onAcc::makeIdxMap(acc, alpaka::onAcc::worker::threadsInGrid, alpaka::IdxRange{n}))
-                    {
+                template<typename Acc, typename TBufA, typename TBufB, typename TBufR>
+                ALPAKA_FN_ACC void operator()(Acc const& acc, TBufA a, TBufB b, TBufR result, ::std::size_t n) const {
+                    for(auto [index] : alpaka::onAcc::makeIdxMap(acc, alpaka::onAcc::worker::threadsInGrid, alpaka::IdxRange{n})) {
                         result[index] = a[index] + b[index];
                     }
                 }
             };
 
             // Elementwise ReLU kernel (activation function)
-            template<typename TAcc>
             class ElementwiseReluKernel {
             public:
-                template<typename TBufIn, typename TBufOut>
-                ALPAKA_FN_ACC void operator()(TAcc const& acc, TBufIn in, TBufOut out, ::std::size_t n) const {
-                    for(auto [index] : alpaka::onAcc::makeIdxMap(acc, alpaka::onAcc::worker::threadsInGrid, alpaka::IdxRange{n}))
-                    {
+                template<typename Acc, typename TBufIn, typename TBufOut>
+                ALPAKA_FN_ACC void operator()(Acc const& acc, TBufIn in, TBufOut out, ::std::size_t n) const {
+                    for(auto [index] : alpaka::onAcc::makeIdxMap(acc, alpaka::onAcc::worker::threadsInGrid, alpaka::IdxRange{n})) {
                         auto v = in[index];
                         out[index] = v > decltype(v){} ? v : decltype(v){};
                     }
@@ -46,7 +42,6 @@ namespace alpaka
                 
                 // Verify compatibility
                 assert(a.isShapeCompatible(b) && "Tensors must have same shape");
-                assert(a.isDeviceCompatible(b) && "Tensors must be on same device");
                 
                 // Create output tensor
                 Tensor<T, Rank> result(a.shape(), a.dtype(), a.layout(), "add_result");
@@ -66,7 +61,7 @@ namespace alpaka
 
             // Device-dispatch overload (explicit exec & queue)
             template<typename T, ::std::size_t Rank, typename Exec, typename Device, typename Queue>
-            Tensor<T, Rank> add(Exec const& exec, Device const& device, Queue& queue, Tensor<T, Rank>& a, Tensor<T, Rank>& b) {
+            Tensor<T, Rank> add(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank>& a, Tensor<T, Rank>& b) {
                 assert(a.isShapeCompatible(b));
                 // Ensure device buffers and upload if dirty
                 a.ensureOnDevice(device, queue);
@@ -77,11 +72,11 @@ namespace alpaka
                 auto n = a.size();
                 unsigned threadsPerBlock = 256u;
                 unsigned blocks = static_cast<unsigned>((n + threadsPerBlock - 1) / threadsPerBlock);
-                auto frameSpec = alpaka::onHost::FrameSpec{threadsPerBlock, blocks};
-                queue.enqueue(exec, frameSpec, ElementwiseAddKernel<Exec>{}, a.getDeviceBuffer(), b.getDeviceBuffer(), result.getDeviceBuffer(), n);
+                auto frameSpec = alpaka::onHost::FrameSpec{alpaka::Vec<unsigned int,1u>{blocks}, alpaka::Vec<unsigned int,1u>{threadsPerBlock}};
+                queue.enqueue(exec, frameSpec, ElementwiseAddKernel{}, a.getDeviceBuffer(device), b.getDeviceBuffer(device), result.getDeviceBuffer(device), n);
                 // Mark result device data modified and download
                 result.markDeviceModified();
-                result.toHost(queue);
+                result.toHost(device, queue);
                 return result;
             }
 
@@ -106,17 +101,17 @@ namespace alpaka
 
             // Device-dispatch ReLU
             template<typename T, ::std::size_t Rank, typename Exec, typename Device, typename Queue>
-            Tensor<T, Rank> relu(Exec const& exec, Device const& device, Queue& queue, Tensor<T, Rank>& input) {
+            Tensor<T, Rank> relu(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank>& input) {
                 input.ensureOnDevice(device, queue);
                 Tensor<T, Rank> result(input.shape(), input.dtype(), input.layout(), "relu_result");
                 result.allocateDevice(device);
                 auto n = input.size();
                 unsigned threadsPerBlock = 256u;
                 unsigned blocks = static_cast<unsigned>((n + threadsPerBlock - 1) / threadsPerBlock);
-                auto frameSpec = alpaka::onHost::FrameSpec{threadsPerBlock, blocks};
-                queue.enqueue(exec, frameSpec, ElementwiseReluKernel<Exec>{}, input.getDeviceBuffer(), result.getDeviceBuffer(), n);
+                auto frameSpec = alpaka::onHost::FrameSpec{alpaka::Vec<unsigned int,1u>{blocks}, alpaka::Vec<unsigned int,1u>{threadsPerBlock}};
+                queue.enqueue(exec, frameSpec, ElementwiseReluKernel{}, input.getDeviceBuffer(device), result.getDeviceBuffer(device), n);
                 result.markDeviceModified();
-                result.toHost(queue);
+                result.toHost(device, queue);
                 return result;
             }
 
@@ -135,16 +130,16 @@ namespace alpaka
 
             // Device-dispatch in-place ReLU
             template<typename T, ::std::size_t Rank, typename Exec, typename Device, typename Queue>
-            void relu_inplace(Exec const& exec, Device const& device, Queue& queue, Tensor<T, Rank>& tensor) {
+            void relu_inplace(Exec const& exec, Device& device, Queue& queue, Tensor<T, Rank>& tensor) {
                 tensor.ensureOnDevice(device, queue);
                 auto n = tensor.size();
                 unsigned threadsPerBlock = 256u;
                 unsigned blocks = static_cast<unsigned>((n + threadsPerBlock - 1) / threadsPerBlock);
-                auto frameSpec = alpaka::onHost::FrameSpec{threadsPerBlock, blocks};
+                auto frameSpec = alpaka::onHost::FrameSpec{alpaka::Vec<unsigned int,1u>{blocks}, alpaka::Vec<unsigned int,1u>{threadsPerBlock}};
                 // Reuse out=in by passing same buffer twice
-                queue.enqueue(exec, frameSpec, ElementwiseReluKernel<Exec>{}, tensor.getDeviceBuffer(), tensor.getDeviceBuffer(), n);
+                queue.enqueue(exec, frameSpec, ElementwiseReluKernel{}, tensor.getDeviceBuffer(device), tensor.getDeviceBuffer(device), n);
                 tensor.markDeviceModified();
-                tensor.toHost(queue);
+                tensor.toHost(device, queue);
             }
 
         } // namespace ops

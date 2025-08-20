@@ -10,7 +10,10 @@
 #include <string>
 #include <array>
 #include <cassert>
+#include <any>
 #include <optional>
+#include <typeinfo>
+#include <stdexcept>
 
 namespace alpaka
 {
@@ -40,15 +43,19 @@ namespace alpaka
 
         private:
             Shape shape_;
-            ::std::vector<T> host_data_;
+            // Host memory as an alpaka managed view (for memcpy compatibility across backends)
+            using HostView = decltype(::alpaka::onHost::allocHost<T>(::alpaka::Vec<std::size_t, 1u>{1}));
+            ::std::optional<HostView> host_view_;
             DataType dtype_;
             Layout layout_;
             ::std::string name_;
             
             // Device buffer - use optional to handle allocation state
-            ::std::optional<decltype(::alpaka::onHost::alloc<T>(::alpaka::onHost::makeHostDevice(), ::std::size_t{1}))> device_buffer_;
+            // Type-erased device buffer (ManagedView of arbitrary API) stored in-place
+            ::std::any device_buffer_;
             bool hostDirty_{true};
             bool deviceDirty_{false};
+            const ::std::type_info* deviceTypeInfo_{nullptr};
 
             ::std::size_t calculateSize() const {
                 ::std::size_t size = 1;
@@ -70,17 +77,19 @@ namespace alpaka
                 , name_(::std::move(name)) {
                 
                 ::std::size_t size = calculateSize();
-                host_data_.resize(size);
+                host_view_.emplace(::alpaka::onHost::allocHost<T>(::alpaka::Vec<std::size_t, 1u>{size}));
             }
 
             // Copy constructor
             Tensor(const Tensor& other)
                 : shape_(other.shape_)
-                , host_data_(other.host_data_)
+                , host_view_(::std::nullopt)
                 , dtype_(other.dtype_)
                 , layout_(other.layout_)
                 , name_(other.name_ + "_copy") {
-                // Don't copy device buffer - require explicit allocation
+                host_view_.emplace(::alpaka::onHost::allocHost<T>(::alpaka::Vec<std::size_t,1u>{other.size()}));
+                for(::std::size_t i=0;i<other.size();++i) (*host_view_)[i]=(*other.host_view_)[i];
+                // Don't copy device buffer - require explicit allocation/ensureOnDevice
                 hostDirty_ = true;
                 deviceDirty_ = false;
             }
@@ -89,7 +98,11 @@ namespace alpaka
             Tensor& operator=(const Tensor& other) {
                 if(this != &other) {
                     shape_ = other.shape_;
-                    host_data_ = other.host_data_;
+                    // Reallocate host view if needed then copy
+                    if(!host_view_.has_value() || size() != other.size()) {
+                        host_view_.emplace(::alpaka::onHost::allocHost<T>(::alpaka::Vec<std::size_t,1u>{other.size()}));
+                    }
+                    for(::std::size_t i=0;i<other.size();++i) (*host_view_)[i]=(*other.host_view_)[i];
                     dtype_ = other.dtype_;
                     layout_ = other.layout_;
                     name_ = other.name_ + "_assigned";
@@ -103,7 +116,7 @@ namespace alpaka
             // Move constructor
             Tensor(Tensor&& other) noexcept
                 : shape_(other.shape_)
-                , host_data_(::std::move(other.host_data_))
+                , host_view_(::std::move(other.host_view_))
                 , dtype_(other.dtype_)
                 , layout_(other.layout_)
                 , name_(::std::move(other.name_))
@@ -119,7 +132,7 @@ namespace alpaka
             Tensor& operator=(Tensor&& other) noexcept {
                 if(this != &other) {
                     shape_ = other.shape_;
-                    host_data_ = ::std::move(other.host_data_);
+                    host_view_ = ::std::move(other.host_view_);
                     dtype_ = other.dtype_;
                     layout_ = other.layout_;
                     name_ = ::std::move(other.name_);
@@ -143,19 +156,24 @@ namespace alpaka
             Layout layout() const { return layout_; }
 
             // Data access
-            T* hostData() { return host_data_.data(); }
-            const T* hostData() const { return host_data_.data(); }
+            T* hostData() { return host_view_->data(); }
+            const T* hostData() const { return host_view_->data(); }
 
             // Device memory management - REAL GPU allocation!
-            bool isDeviceAllocated() const {
-                return device_buffer_.has_value();
-            }
+            bool isDeviceAllocated() const { return device_buffer_.has_value(); }
 
             template<typename Device>
-            void allocateDevice(const Device& device) {
+            void allocateDevice(Device& device) {
                 if (!device_buffer_.has_value()) {
                     ::std::size_t size = calculateSize();
-                    device_buffer_ = ::alpaka::onHost::alloc<T>(device, size);
+                    auto buf = ::alpaka::onHost::alloc<T>(device, ::alpaka::Vec<std::size_t,1u>{size});
+                    device_buffer_ = ::std::move(buf);
+                    deviceTypeInfo_ = &typeid(Device);
+                } else {
+                    // If already allocated ensure same device type (simplistic safety check)
+                    if(deviceTypeInfo_ && *deviceTypeInfo_ != typeid(Device)) {
+                        throw ::std::runtime_error("Tensor device buffer already allocated with different device type");
+                    }
                 }
             }
 
@@ -164,19 +182,22 @@ namespace alpaka
             }
 
             // Data transfer operations
-            template<typename Queue>
-            void toDevice(Queue& queue) {
-                if (device_buffer_.has_value() && hostDirty_) {
-                    ::alpaka::onHost::memcpy(queue, *device_buffer_, host_data_.data(), calculateSize());
+        template<typename Device, typename Queue>
+        void toDevice(Device& device, Queue& queue) {
+                if (isDeviceAllocated() && hostDirty_) {
+                    // allocate temporary view size vector
+            auto& devBuf = getDeviceBuffer(device);
+            ::alpaka::onHost::memcpy(queue, devBuf, *host_view_);
                     hostDirty_ = false;
                     deviceDirty_ = false;
                 }
             }
 
-            template<typename Queue>
-            void toHost(Queue& queue) {
-                if (device_buffer_.has_value() && deviceDirty_) {
-                    ::alpaka::onHost::memcpy(queue, host_data_.data(), *device_buffer_, calculateSize());
+        template<typename Device, typename Queue>
+        void toHost(Device& device, Queue& queue) {
+                if (isDeviceAllocated() && deviceDirty_) {
+            auto& devBuf = getDeviceBuffer(device);
+            ::alpaka::onHost::memcpy(queue, *host_view_, devBuf);
                     deviceDirty_ = false;
                     hostDirty_ = false;
                 }
@@ -184,78 +205,79 @@ namespace alpaka
 
             // Get device buffer for kernel operations
             template<typename Device>
-            auto& getDeviceBuffer(const Device& device) {
-                if (!device_buffer_.has_value()) {
-                    allocateDevice(device);
+            auto& getDeviceBuffer(Device& device) {
+                if (!device_buffer_.has_value()) allocateDevice(device);
+                if(deviceTypeInfo_ && *deviceTypeInfo_ != typeid(Device)) {
+                    throw ::std::runtime_error("Device type mismatch in getDeviceBuffer");
                 }
-                return *device_buffer_;
+                using BufType = decltype(::alpaka::onHost::alloc<T>(device, ::alpaka::Vec<std::size_t,1u>{1}));
+                return *::std::any_cast<BufType>(&device_buffer_);
             }
 
-            auto& getDeviceBuffer() {
+            template<typename Device>
+            const auto& getDeviceBuffer(Device& device) const {
                 assert(device_buffer_.has_value() && "Device buffer not allocated");
-                return *device_buffer_;
-            }
-
-            const auto& getDeviceBuffer() const {
-                assert(device_buffer_.has_value() && "Device buffer not allocated");
-                return *device_buffer_;
+                if(deviceTypeInfo_ && *deviceTypeInfo_ != typeid(Device)) {
+                    throw ::std::runtime_error("Device type mismatch in getDeviceBuffer (const)");
+                }
+                using BufType = decltype(::alpaka::onHost::alloc<T>(device, ::alpaka::Vec<std::size_t,1u>{1}));
+                return *::std::any_cast<const BufType>(&device_buffer_);
             }
 
             // Legacy methods for compatibility
             void allocateDevice() {
-                // Use host device for compatibility
-                auto device = ::alpaka::onHost::makeHostDevice();
-                allocateDevice(device);
+                auto hostDev = ::alpaka::onHost::makeHostDevice();
+                allocateDevice(hostDev);
             }
 
             // Ensure data is present on device (alloc + upload if needed)
             template<typename Device, typename Queue>
-            void ensureOnDevice(const Device& device, Queue& queue) {
+            void ensureOnDevice(Device& device, Queue& queue) {
                 allocateDevice(device);
-                toDevice(queue);
+                toDevice(device, queue);
             }
 
             // Element access
             T& operator()(::std::size_t idx) {
                 assert(Rank == 1 && "Single index access only for 1D tensors");
-                assert(idx < host_data_.size() && "Index out of bounds");
+                assert(idx < size() && "Index out of bounds");
                 hostDirty_ = true;
-                return host_data_[idx];
+                return (*host_view_)[idx];
             }
 
             const T& operator()(::std::size_t idx) const {
                 assert(Rank == 1 && "Single index access only for 1D tensors");
-                assert(idx < host_data_.size() && "Index out of bounds");
-                return host_data_[idx];
+                assert(idx < size() && "Index out of bounds");
+                return (*host_view_)[idx];
             }
 
             // Utility methods
-            template<typename Queue>
-            void zero(Queue& queue) {
-                ::std::fill(host_data_.begin(), host_data_.end(), T{});
-                if (device_buffer_.has_value()) {
-                    toDevice(queue); // Sync to device
+            template<typename Device, typename Queue>
+            void zero(Device& device, Queue& queue) {
+                for(::std::size_t i=0;i<size();++i) (*host_view_)[i]=T{};
+                if (isDeviceAllocated()) {
+                    toDevice(device, queue);
                 }
-                hostDirty_ = false;
+                hostDirty_ = false; // now host & device in sync
             }
 
             void zero() {
-                ::std::fill(host_data_.begin(), host_data_.end(), T{});
+                for(::std::size_t i=0;i<size();++i) (*host_view_)[i]=T{};
                 // No device sync for legacy compatibility
                 hostDirty_ = true;
             }
 
-            template<typename Queue>
-            void fill(const T& value, Queue& queue) {
-                ::std::fill(host_data_.begin(), host_data_.end(), value);
-                if (device_buffer_.has_value()) {
-                    toDevice(queue); // Sync to device
+            template<typename Device, typename Queue>
+            void fill(const T& value, Device& device, Queue& queue) {
+                for(::std::size_t i=0;i<size();++i) (*host_view_)[i]=value;
+                if (isDeviceAllocated()) {
+                    toDevice(device, queue);
                 }
                 hostDirty_ = false;
             }
 
             void fill(const T& value) {
-                ::std::fill(host_data_.begin(), host_data_.end(), value);
+                for(::std::size_t i=0;i<size();++i) (*host_view_)[i]=value;
                 // No device sync for legacy compatibility
                 hostDirty_ = true;
             }
@@ -274,7 +296,7 @@ namespace alpaka
                     stride *= shape_[i];
                 }
                 
-                return host_data_[flat_idx];
+                return (*host_view_)[flat_idx];
             }
 
             // Mark device data modified externally (e.g., after a kernel write)

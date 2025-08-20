@@ -63,8 +63,8 @@ auto example(T_Cfg const& cfg) -> int
         std::cout << "\n--- Testing Memory Management ---" << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
         
-        tensorA.allocateDevice();
-        tensorB.allocateDevice();
+    tensorA.allocateDevice(device);
+    tensorB.allocateDevice(device);
         
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration<double, std::milli>(end - start).count();
@@ -76,13 +76,17 @@ auto example(T_Cfg const& cfg) -> int
         std::cout << "Shape compatible: " << (tensorA.isShapeCompatible(tensorB) ? "Yes" : "No") << std::endl;
         std::cout << "Device compatible: " << (tensorA.isDeviceCompatible(tensorB) ? "Yes" : "No") << std::endl;
 
-        // Test tensor operations (CPU-only for now)
-        std::cout << "\n--- Testing Operations ---" << std::endl;
-        
-        // Create a result tensor for addition using simplified API
-        auto result = tensor::ops::add(tensorA, tensorB);
-        
-        std::cout << "Addition result - result[0]: " << result(0) << " (expected: " << (tensorA(0) + tensorB(0)) << ")" << std::endl;
+    // Test tensor operations (device-dispatch path if backend supports kernels)
+    std::cout << "\n--- Testing Operations (Kernel Dispatch) ---" << std::endl;
+
+    // Ensure tensors are on device (alloc + upload if dirty)
+    tensorA.ensureOnDevice(device, queue);
+    tensorB.ensureOnDevice(device, queue);
+
+    auto result = tensor::ops::add<float, 1>(exec, device, queue, tensorA, tensorB);
+    // Queue operations are synchronous after download inside add(), but wait for safety
+    alpaka::onHost::wait(queue);
+    std::cout << "Addition result - result[0]: " << result(0) << " (expected: " << (tensorA(0) + tensorB(0)) << ")" << std::endl;
 
         // Test ReLU
         tensor::Tensor1D<float> reluTest({5}, tensor::DataType::Float32, tensor::Layout::RowMajor, "reluTest");
@@ -95,19 +99,24 @@ auto example(T_Cfg const& cfg) -> int
         std::cout << "\nBefore ReLU: [" << reluTest(0) << ", " << reluTest(1) << ", " << reluTest(2) 
                   << ", " << reluTest(3) << ", " << reluTest(4) << "]" << std::endl;
 
-        tensor::ops::relu_inplace(reluTest);
+    // Move test tensor to device and run in-place ReLU kernel
+    reluTest.ensureOnDevice(device, queue);
+    tensor::ops::relu_inplace<float, 1>(exec, device, queue, reluTest);
+    alpaka::onHost::wait(queue);
 
         std::cout << "After ReLU:  [" << reluTest(0) << ", " << reluTest(1) << ", " << reluTest(2) 
                   << ", " << reluTest(3) << ", " << reluTest(4) << "]" << std::endl;
 
         // Test tensor utilities
         std::cout << "\n--- Testing Utilities ---" << std::endl;
-        tensor::Tensor1D<float> zeroTensor({10});
-        zeroTensor.zero();
+    tensor::Tensor1D<float> zeroTensor({10});
+    zeroTensor.ensureOnDevice(device, queue);
+    zeroTensor.zero(device, queue); // zero on host then upload (dirty tracking)
         std::cout << "Zero tensor[0]: " << zeroTensor(0) << " (expected: 0)" << std::endl;
 
-        tensor::Tensor1D<float> fillTensor({10});
-        fillTensor.fill(3.14f);
+    tensor::Tensor1D<float> fillTensor({10});
+    fillTensor.ensureOnDevice(device, queue);
+    fillTensor.fill(3.14f, device, queue);
         std::cout << "Fill tensor[0]: " << fillTensor(0) << " (expected: 3.14)" << std::endl;
 
         // Test copy constructor
