@@ -5,7 +5,7 @@
 #pragma once
 
 // Core tensor functionality
-#include <alpaka/tensor/TensorGPUFixed.hpp>
+#include <alpaka/tensor/TensorCore.hpp>
 
 // Operations
 #include <alpaka/tensor/ops/ElementwiseFixed.hpp>

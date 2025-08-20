@@ -1,6 +1,6 @@
 #pragma once
 #include <alpaka/alpaka.hpp>
-#include <alpaka/tensor/TensorGPUFixed.hpp>
+#include <alpaka/tensor/TensorCore.hpp>
 #include <type_traits>
 
 namespace alpaka { namespace tensor { namespace ops {

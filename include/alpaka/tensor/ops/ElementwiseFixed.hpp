@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <alpaka/tensor/TensorGPUFixed.hpp>
+#include <alpaka/tensor/TensorCore.hpp>
 #include <alpaka/alpaka.hpp>
 
 namespace alpaka
