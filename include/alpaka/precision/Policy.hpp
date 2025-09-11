@@ -15,9 +15,9 @@ namespace alpaka::precision
     template<typename TAcc, typename DefaultT = float>
     struct Optimal
     {
-        using type = std::conditional_t<SupportsTF32<TAcc>::value, ::alpaka::TF32,
-                     std::conditional_t<SupportsBF16<TAcc>::value, ::alpaka::BF16,
-                     DefaultT>>;
+    using type = std::conditional_t<SupportsTF32<TAcc>::value, ::alpaka::TF32,
+             std::conditional_t<SupportsBF16<TAcc>::value, ::alpaka::BF16,
+             std::conditional_t<std::is_same_v<DefaultT, void>, ::alpaka::FP16, DefaultT>>>;
     };
 
     template<typename TAcc, typename DefaultT = float>
