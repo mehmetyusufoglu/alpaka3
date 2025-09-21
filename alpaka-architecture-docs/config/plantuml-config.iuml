@@ -1,0 +1,35 @@
+@startuml
+
+!define RECTANGLE class
+!define CIRCLE usecase
+
+skinparam rectangle {
+    BackgroundColor #F0F0F0
+    BorderColor #000000
+}
+
+skinparam usecase {
+    BackgroundColor #FFFFFF
+    BorderColor #000000
+}
+
+package "Alpaka Architecture" {
+    RECTANGLE "alpaka.hpp" as AlpakaHeader
+    RECTANGLE "Core Components" as CoreComponents
+    RECTANGLE "API Components" as APIComponents
+    RECTANGLE "Accelerator Components" as AcceleratorComponents
+    RECTANGLE "Offloading Components" as OffloadingComponents
+    RECTANGLE "Memory Model" as MemoryModel
+    RECTANGLE "Parallelism Levels" as ParallelismLevels
+
+    AlpakaHeader --> CoreComponents : Includes
+    AlpakaHeader --> APIComponents : Includes
+    CoreComponents --> MemoryModel : Utilizes
+    CoreComponents --> ParallelismLevels : Supports
+    APIComponents --> AcceleratorComponents : Interfaces with
+    APIComponents --> OffloadingComponents : Interfaces with
+}
+
+@enduml
+
+// This file contains configuration settings for PlantUML, which may include styles, themes, or other settings to customize the generated diagrams.

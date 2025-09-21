@@ -1,0 +1,286 @@
+@startuml
+title Alpaka Redundant Hierarchical Parallelism - Detailed Implementation
+
+' Define styles (after title to override theme)
+skinparam class {
+    BackgroundColor LightBlue
+    BorderColor Blue
+    ArrowColor DarkBlue
+    FontColor Black
+    FontSize 11
+}
+
+skinparam package {
+    BackgroundColor LightGray
+    BorderColor DarkGray
+    FontColor Black
+    FontSize 12
+}
+
+' Task Parallelism Layer
+package "Task Parallelism" {
+    class TaskGraph {
+        + Dependencies: DAG
+        + Queues: Multiple streams
+        + Events: Synchronization
+        --
+        Constraints:
+        • Sequential within queue
+        • Parallel across queues
+        • Limited by API support
+    }
+    
+    class Queue {
+        + Asynchronous execution
+        + Event-based sync
+        + Backend-specific streams
+        --
+        Examples:
+        • CUDA: cudaStream_t
+        • OpenCL: cl_command_queue
+        • Host: Thread pool
+    }
+}
+
+' Data Parallelism Hierarchy
+package "Hierarchical Data Parallelism" {
+    
+    ' Grid Level
+    class Grid {
+        <<Hierarchy Level 1>>
+        + Problem space: N-dimensional
+        + Work distribution: Global
+        + Synchronization: Events/Barriers
+        --
+        Mapping Examples:
+        • CUDA: <<<blocks, threads>>>
+        • OpenMP: #pragma omp parallel
+        • SYCL: nd_range
+    }
+    
+    ' Block Level  
+    class Block {
+        <<Hierarchy Level 2>>
+        + Independence: Full
+        + Shared resources: Memory
+        + Synchronization: None between blocks
+        --
+        Characteristics:
+        • Scalable unit of work
+        • Local memory allocation
+        • Hardware scheduling unit
+    }
+    
+    ' Warp Level
+    class Warp {
+        <<Hierarchy Level 3>>
+        + Execution: Lock-step SIMD
+        + Size: Backend dependent
+        + Synchronization: Implicit
+        --
+        Backend Mapping:
+        • CUDA: 32 threads
+        • AMD: 64 threads (wavefront)
+        • CPU: SIMD width
+    }
+    
+    ' Thread Level
+    class Thread {
+        <<Hierarchy Level 4>>
+        + Granularity: Fine-grained
+        + Communication: Block-local
+        + Synchronization: Barriers/Atomics
+        --
+        Resources:
+        • Private registers
+        • Shared memory access
+        • Global memory access
+    }
+    
+    ' Element Level
+    class Element {
+        <<Hierarchy Level 5>>
+        + Processing: Sequential
+        + Optimization: Register usage
+        + Vectorization: Compiler dependent
+        --
+        Benefits:
+        • Better register utilization
+        • Reduced memory bandwidth
+        • Vectorization opportunities
+    }
+}
+
+' Backend Implementations
+package "Backend Implementations" {
+    
+    class CUDAImplementation {
+        + Grid: <<<gridDim, blockDim>>>
+        + Block: threadblock
+        + Warp: 32 threads
+        + Thread: CUDA thread
+        + Element: loop in thread
+        --
+        Memory:
+        • Global: device memory
+        • Shared: __shared__
+        • Registers: automatic
+    }
+    
+    class HIPImplementation {
+        + Grid: hipLaunchKernelGGL
+        + Block: workgroup  
+        + Warp: wavefront (64)
+        + Thread: work-item
+        + Element: sequential loop
+        --
+        Memory:
+        • Global: device memory
+        • Shared: __shared__
+        • Registers: automatic
+    }
+    
+    class SYCLImplementation {
+        + Grid: nd_range
+        + Block: work-group
+        + Warp: sub-group
+        + Thread: work-item
+        + Element: private loop
+        --
+        Memory:
+        • Global: global memory
+        • Shared: local memory
+        • Registers: private memory
+    }
+    
+    class HostImplementation {
+        + Grid: parallel region
+        + Block: team/gang
+        + Warp: SIMD vectors
+        + Thread: OS thread
+        + Element: vectorized loop
+        --
+        Libraries:
+        • OpenMP: teams/threads
+        • TBB: parallel_for
+        • std::thread: manual
+    }
+}
+
+' Synchronization Mechanisms
+package "Synchronization" {
+    
+    class BlockSynchronization {
+        + Barriers: __syncthreads()
+        + Atomic ops: block-wide
+        + Shared memory: coordination
+        --
+        Constraints:
+        • All threads must reach
+        • No deadlock conditions
+        • Block-local only
+    }
+    
+    class WarpSynchronization {
+        + Implicit: lock-step execution
+        + Warp voting: __any, __all
+        + Shuffle ops: data exchange
+        --
+        Properties:
+        • No explicit barriers needed
+        • Predicated execution
+        • Coalesced memory access
+    }
+    
+    class GridSynchronization {
+        + Events: cross-queue sync
+        + Kernel boundaries: implicit
+        + Global barriers: limited support
+        --
+        Mechanisms:
+        • Event dependencies
+        • Queue ordering
+        • Host synchronization
+    }
+}
+
+' Memory Access Patterns
+package "Memory Access Patterns" {
+    
+    class GlobalAccess {
+        + Coalescing: critical for performance
+        + Caching: hardware dependent
+        + Bandwidth: high latency
+        --
+        Optimization:
+        • Sequential access patterns
+        • Avoid bank conflicts
+        • Memory alignment
+    }
+    
+    class SharedAccess {
+        + Bank conflicts: performance impact
+        + Broadcast: one-to-many
+        + Fast: low latency
+        --
+        Management:
+        • Explicit allocation
+        • Block lifetime
+        • Synchronization required
+    }
+}
+
+' Hierarchy Relationships
+Grid ||--o{ Block : "contains\n(independent)"
+Block ||--o{ Warp : "organized into\n(hardware groups)"
+Warp ||--o{ Thread : "executes\n(lock-step)"
+Thread ||--o{ Element : "processes\n(sequential)"
+
+' Backend Mappings
+Grid ..> CUDAImplementation : "CUDA mapping"
+Grid ..> HIPImplementation : "HIP mapping"
+Grid ..> SYCLImplementation : "SYCL mapping"
+Grid ..> HostImplementation : "Host mapping"
+
+' Synchronization Relationships
+Block --> BlockSynchronization : "uses"
+Warp --> WarpSynchronization : "implicit"
+Grid --> GridSynchronization : "events"
+
+' Memory Relationships
+Thread --> GlobalAccess : "reads/writes"
+Block --> SharedAccess : "coordinates through"
+
+' Task to Data Parallelism
+TaskGraph --> Grid : "launches"
+Queue --> Grid : "executes"
+
+note top of Grid
+    **Scalability Principle**
+    Each level can be mapped to
+    different hardware capabilities
+    enabling performance portability
+end note
+
+note right of CUDAImplementation
+    **Backend Specialization**
+    Each backend provides optimal
+    mapping of the hierarchy to
+    its specific hardware features
+end note
+
+note bottom of BlockSynchronization
+    **Synchronization Strategy**
+    Different levels provide different
+    synchronization guarantees and
+    performance characteristics
+end note
+
+legend bottom right
+  **Connection Legend**
+  → launches: Execution control
+  → uses: Component dependency
+  → contains: Hierarchical containment
+end legend
+
+@enduml

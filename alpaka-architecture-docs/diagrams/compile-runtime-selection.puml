@@ -1,0 +1,205 @@
+@startuml
+title Alpaka Compile-Time vs Runtime Selection Model
+
+skinparam timeline {
+    BackgroundColor LightBlue
+    LineColor Blue
+    FontColor Black
+}
+
+skinparam note {
+    BackgroundColor LightYellow
+    BorderColor Orange
+    FontColor Black
+}
+
+' Compile-time phase
+package "Compile-Time Phase" as CompileTime {
+    
+    rectangle "Template Instantiation" as Templates {
+        class "VectorAddKernel<Acc1>" as Kernel1 {
+            + ALPAKA_FN_ACC operator()
+            + Backend: CPU Serial
+            + Optimizations: Sequential
+        }
+        
+        class "VectorAddKernel<Acc2>" as Kernel2 {
+            + ALPAKA_FN_ACC operator()
+            + Backend: OpenMP Blocks
+            + Optimizations: Multi-threaded
+        }
+        
+        class "VectorAddKernel<Acc3>" as Kernel3 {
+            + ALPAKA_FN_ACC operator()
+            + Backend: CUDA GPU
+            + Optimizations: GPU-specific
+        }
+        
+        class "VectorAddKernel<AccN>" as KernelN {
+            + ALPAKA_FN_ACC operator()
+            + Backend: More backends...
+            + Optimizations: Backend-specific
+        }
+    }
+    
+    rectangle "Backend Dictionary Generation" as BackendGen {
+        class "allBackends()" as AllBackends {
+            + createBackendsFor()
+            + Generates all combinations
+            --
+            Returns: std::tuple<
+              Dict<DeviceSpec, Executor>,
+              Dict<DeviceSpec, Executor>,
+              ...
+            >
+        }
+        
+        class "Backend Tuples" as Tuples {
+            + {api::host, cpu} + exec::cpuSerial
+            + {api::host, cpu} + exec::ompBlocks
+            + {api::cuda, nvidiaGpu} + exec::gpuCuda
+            + {api::hip, amdGpu} + exec::gpuHip
+            + {api::oneApi, intelGpu} + exec::oneApi
+            --
+            Each combination = 1 backend dictionary
+        }
+    }
+    
+    rectangle "makeAcc Overloads" as MakeAccOverloads {
+        class "makeAcc Dispatch" as MakeAcc {
+            + makeAcc(exec::CpuSerial, ...)
+            + makeAcc(exec::CpuOmpBlocks, ...)
+            + makeAcc(exec::GpuCuda, ...)
+            + makeAcc(exec::GpuHip, ...)
+            --
+            Compile-time function overloading
+            Returns: Acc<BackendStorage>
+        }
+    }
+}
+
+' Runtime phase
+package "Runtime Phase" as RuntimeTime {
+    
+    rectangle "Hardware Detection" as HardwareDetect {
+        class "Device Enumeration" as DevEnum {
+            + Platform detection
+            + Available device count
+            + Device capabilities
+            --
+            For each backend tuple:
+            Check if hardware exists
+        }
+        
+        class "Device Selection" as DevSelect {
+            + makeDeviceSelector(deviceSpec)
+            + device.makeDevice(index)
+            + Runtime device binding
+            --
+            Selects actual hardware instance
+        }
+    }
+    
+    rectangle "Execution Context" as ExecContext {
+        class "Queue Creation" as QueueCreate {
+            + device.makeQueue()
+            + Asynchronous execution
+            + Event management
+            --
+            Creates execution stream/context
+        }
+        
+        class "Accelerator Creation" as AccCreate {
+            + makeAcc(executor, threadBlocking)
+            + Runtime executor dispatch
+            + Backend-specific context
+            --
+            Returns: Acc<ConcreteStorage>
+        }
+    }
+    
+    rectangle "Kernel Execution" as KernelExec {
+        class "Task Enqueue" as TaskEnq {
+            + queue.enqueue(exec, frameSpec, kernel)
+            + Asynchronous launch
+            + GPU/CPU execution
+            --
+            Executes pre-compiled template
+        }
+    }
+}
+
+' Relationships
+Templates --> BackendGen : "generates for"
+BackendGen --> Tuples : "produces"
+Tuples --> MakeAccOverloads : "enables dispatch"
+
+Tuples --> HardwareDetect : "runtime iteration"
+HardwareDetect --> DevEnum : "checks availability"
+DevEnum --> DevSelect : "available devices"
+DevSelect --> ExecContext : "selected device"
+ExecContext --> QueueCreate : "creates queue"
+QueueCreate --> AccCreate : "context for"
+AccCreate --> KernelExec : "accelerator to"
+KernelExec --> Templates : "executes instantiated"
+
+' Example flow annotation
+note top of Templates
+    **Compile-Time Benefits**
+    • Zero runtime overhead
+    • Backend-specific optimizations
+    • Template specialization
+    • Compile-time error checking
+end note
+
+note bottom of HardwareDetect
+    **Runtime Benefits**
+    • Dynamic hardware discovery
+    • Fallback device selection
+    • Multi-device applications
+    • Platform portability
+end note
+
+' Detailed example
+note as ExampleFlow
+    **Example: VectorAdd Execution Flow**
+    
+    1. Compile-time:
+       - VectorAddKernel templated for all backends
+       - Backend dictionaries generated
+       - makeAcc overloads resolved
+    
+    2. Runtime (for each backend):
+       - Check if hardware available
+       - Select device (e.g., GPU 0)
+       - Create queue on device
+       - Create accelerator context
+       - Execute pre-compiled kernel template
+end note
+
+' Backend components detail
+note as BackendComponents
+    **Backend Dictionary (Line 230)**
+    ```
+    backend[object::deviceSpec] = DeviceSpec{api, deviceKind}
+    backend[object::exec] = ExecutorType
+    ```
+    
+    Runtime tuple access pattern:
+    • deviceSpec: Which API + hardware type
+    • exec: Which execution strategy
+    
+    Example combinations:
+    • {api::cuda, nvidiaGpu} + exec::gpuCuda
+    • {api::host, cpu} + exec::ompBlocks
+end note
+
+legend bottom right
+  **Connection Legend**
+  → generates for: Code generation
+  → creates: Object instantiation
+  → selected device: Device selection path
+  → executes instantiated: Template execution
+end legend
+
+@enduml

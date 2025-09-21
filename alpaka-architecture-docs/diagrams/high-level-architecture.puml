@@ -1,0 +1,170 @@
+@startuml
+title Alpaka Portability Library - High-Level Architecture
+
+skinparam packageStyle rectangle
+skinparam rectangle {
+    BackgroundColor LightBlue
+    BorderColor Blue
+    FontColor Black
+}
+
+' User Application Layer
+package "User Application" as UserApp {
+    [Application Code] as App
+    [Kernel Functions] as Kernels
+}
+
+' Main Alpaka Interface
+package "Alpaka Interface" as Interface {
+    [alpaka.hpp] as MainHeader
+    [Unified API] as UnifiedAPI
+}
+
+' Host and Accelerator Operations
+package "Execution Contexts" as Contexts {
+    package "onHost Operations" as HostOps {
+        [Device Management] as DevMgmt
+        [Queue Management] as QueueMgmt  
+        [Memory Allocation] as MemAlloc
+        [Host Algorithms] as HostAlgo
+    }
+    
+    package "onAcc Operations" as AccOps {
+        [Accelerator Context] as AccCtx
+        [Global Memory] as GlobalMem
+        [Atomic Operations] as Atomics
+        [SIMD Operations] as SIMD
+        [Work Groups] as WorkGroups
+    }
+}
+
+' Backend Abstraction - Three Layer Model
+package "Three-Layer Abstraction Model" as ThreeLayer {
+    package "APIs (Programming Models)" as APIs {
+        [api::host] as HostAPI
+        [api::cuda] as CudaAPI
+        [api::hip] as HipAPI
+        [api::oneApi] as OneAPI
+    }
+    
+    package "Device Kinds (Hardware)" as DeviceKinds {
+        [deviceKind::cpu] as CPUKind
+        [deviceKind::amdGpu] as AMDKind
+        [deviceKind::nvidiaGpu] as NVIDIAKind
+        [deviceKind::intelGpu] as IntelKind
+    }
+    
+    package "Executors (Strategies)" as Executors {
+        [exec::cpuSerial] as CPUSerial
+        [exec::ompBlocks] as OMPBlocks
+        [exec::gpuCuda] as GPUCuda
+        [exec::gpuHip] as GPUHip
+        [exec::oneApi] as OneAPIExec
+    }
+}
+
+' Legacy Backend Layer (kept for backward compatibility)
+package "Backend Implementations" as Backends {
+    [CUDA Runtime] as CUDA
+    [HIP Runtime] as HIP  
+    [SYCL Runtime] as SYCL
+    [OpenMP/TBB] as HostParallel
+}
+
+' Core Infrastructure
+package "Core Infrastructure" as Core {
+    [Configuration] as Config
+    [Type System] as Types
+    [Tag Dispatch] as Tags
+    [Debug/Assert] as Debug
+    [Platform Detection] as Platform
+}
+
+' Memory Management
+package "Memory Management" as Memory {
+    [Memory Views] as Views
+    [Iterators] as Iterators
+    [Buffer Management] as Buffers
+    [Data Pitches] as Pitches
+}
+
+' Mathematical Operations
+package "Mathematical Operations" as Math {
+    [Math Functions] as MathFuncs
+    [Vector Operations] as VecOps
+    [Complex Numbers] as Complex
+}
+
+' Relationships
+App --> MainHeader : includes
+Kernels --> AccOps : executes on
+MainHeader --> UnifiedAPI : provides
+UnifiedAPI --> HostOps : host operations
+UnifiedAPI --> AccOps : accelerator operations
+
+HostOps --> ThreeLayer : configures
+AccOps --> ThreeLayer : executes through
+
+' Three-layer relationships
+CPUSerial --> HostAPI : uses
+CPUSerial --> CPUKind : targets
+OMPBlocks --> HostAPI : uses
+OMPBlocks --> CPUKind : targets
+GPUCuda --> CudaAPI : uses
+GPUCuda --> NVIDIAKind : targets
+GPUHip --> HipAPI : uses
+GPUHip --> AMDKind : targets
+OneAPIExec --> OneAPI : uses
+OneAPIExec --> IntelKind : targets
+OneAPIExec --> CPUKind : can target
+
+' Backend implementations
+HostAPI --> HostParallel : implements via
+CudaAPI --> CUDA : implements via
+HipAPI --> HIP : implements via
+OneAPI --> SYCL : implements via
+
+ThreeLayer --> Core : built on
+HostOps --> Memory : manages
+AccOps --> Memory : accesses
+HostOps --> Math : uses
+AccOps --> Math : uses
+
+Core --> Platform : detects
+Core --> Config : configures
+Core --> Types : provides
+Core --> Tags : uses
+
+note top of Interface
+  Entry point for all Alpaka functionality
+  Provides unified interface across backends
+end note
+
+note right of ThreeLayer
+  **Three-Layer Abstraction**
+  APIs define programming models
+  Device Kinds classify hardware
+  Executors combine API + Strategy
+  
+  Enables flexible hardware mapping:
+  • One API → Multiple hardware types
+  • One hardware → Multiple strategies
+  • Future hardware support
+end note
+
+note bottom of Core
+  Foundation layer providing
+  configuration, type system,
+  and platform detection
+end note
+
+legend bottom right
+  **Connection Legend**
+  → uses: Component dependency
+  → targets: Hardware selection
+  → provides: Interface provision
+  → configures: Configuration relationship
+  → implements via: Backend implementation
+end legend
+
+@enduml

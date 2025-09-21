@@ -1,0 +1,254 @@
+@startuml
+title Alpaka Three-Layer Abstraction Model
+
+skinparam class {
+    BackgroundColor LightCyan
+    BorderColor DarkBlue
+    FontColor Black
+    FontSize 11
+}
+
+skinparam package {
+    BackgroundColor LightGray
+    BorderColor DarkGray
+    FontColor Black
+    FontSize 12
+}
+
+' Three main abstraction layers
+package "Layer 1: APIs (Programming Models)" as APILayer {
+    class "api::host" as HostAPI {
+        + Standard C++ threading
+        + OpenMP support
+        + TBB integration
+        + std::thread pools
+        --
+        Characteristics:
+        • CPU-focused programming
+        • Familiar C++ patterns
+        • Multiple threading backends
+    }
+    
+    class "api::cuda" as CudaAPI {
+        + CUDA kernel model
+        + CUDA runtime API
+        + Device memory management
+        + Stream processing
+        --
+        Characteristics:
+        • NVIDIA-specific
+        • Mature ecosystem
+        • High performance
+    }
+    
+    class "api::hip" as HipAPI {
+        + HIP kernel model  
+        + ROCm runtime
+        + AMD-optimized
+        + CUDA compatibility
+        --
+        Characteristics:
+        • AMD GPU focused
+        • CUDA-like syntax
+        • Open source
+    }
+    
+    class "api::oneApi" as OneAPI {
+        + SYCL standard
+        + Intel DPC++
+        + Cross-platform
+        + Unified memory model
+        --
+        Characteristics:
+        • Standards-based
+        • CPU + GPU support
+        • Vendor neutral
+    }
+}
+
+package "Layer 2: Device Kinds (Hardware Categories)" as DeviceLayer {
+    class "deviceKind::cpu" as CPUDevice {
+        + Multi-core processors
+        + SIMD instruction sets
+        + Large memory capacity
+        + Cache hierarchies
+        --
+        Examples:
+        • Intel x86_64
+        • AMD64
+        • ARM processors
+        • RISC-V
+    }
+    
+    class "deviceKind::amdGpu" as AMDDevice {
+        + AMD RDNA/CDNA architecture
+        + High memory bandwidth
+        + Many compute units
+        + HBM memory
+        --
+        Examples:
+        • Radeon RX series
+        • Instinct MI series
+        • APU integrated graphics
+    }
+    
+    class "deviceKind::nvidiaGpu" as NVIDIADevice {
+        + CUDA cores
+        + Tensor cores (newer)
+        + High bandwidth memory
+        + NVLink interconnect
+        --
+        Examples:
+        • GeForce RTX series
+        • Tesla/A100 series
+        • Jetson embedded
+    }
+    
+    class "deviceKind::intelGpu" as IntelDevice {
+        + Intel Xe architecture
+        + Integrated graphics
+        + Discrete Arc GPUs
+        + Ponte Vecchio HPC
+        --
+        Examples:
+        • Intel UHD Graphics
+        • Intel Arc A-series
+        • Intel Data Center GPU
+    }
+}
+
+package "Layer 3: Executors (Execution Strategies)" as ExecutorLayer {
+    class "exec::cpuSerial" as CPUSerial {
+        + Sequential execution
+        + Single thread
+        + Debugging friendly
+        + Deterministic results
+        --
+        Use Cases:
+        • Development/debugging
+        • Small problem sizes
+        • Verification runs
+    }
+    
+    class "exec::ompBlocks" as OMPBlocks {
+        + OpenMP parallelization
+        + Block-level distribution
+        + Thread team execution
+        + Dynamic scheduling
+        --
+        Use Cases:
+        • Multi-core CPU utilization
+        • NUMA-aware execution
+        • CPU cluster nodes
+    }
+    
+    class "exec::gpuCuda" as GPUCuda {
+        + CUDA grid execution
+        + Warp-based SIMD
+        + Shared memory optimization
+        + High occupancy
+        --
+        Use Cases:
+        • NVIDIA GPU acceleration
+        • High-throughput computing
+        • ML/AI workloads
+    }
+    
+    class "exec::gpuHip" as GPUHip {
+        + HIP grid execution
+        + Wavefront SIMD (64-wide)
+        + LDS shared memory
+        + GCN/RDNA optimization
+        --
+        Use Cases:
+        • AMD GPU acceleration
+        • ROCm ecosystem
+        • Open source stacks
+    }
+    
+    class "exec::oneApi" as OneAPIExec {
+        + SYCL nd_range execution
+        + Sub-group parallelism
+        + Unified shared memory
+        + Cross-device portability
+        --
+        Use Cases:
+        • Intel hardware optimization
+        • Standards-based development
+        • CPU+GPU heterogeneous
+    }
+}
+
+' Cross-layer relationships showing valid combinations
+CPUSerial --> HostAPI : implements
+CPUSerial --> CPUDevice : executes on
+
+OMPBlocks --> HostAPI : implements  
+OMPBlocks --> CPUDevice : executes on
+
+GPUCuda --> CudaAPI : implements
+GPUCuda --> NVIDIADevice : executes on
+
+GPUHip --> HipAPI : implements
+GPUHip --> AMDDevice : executes on
+
+OneAPIExec --> OneAPI : implements
+OneAPIExec --> IntelDevice : primary target
+OneAPIExec --> CPUDevice : also supports
+
+' Special cross-device capabilities
+OneAPI ..> CPUDevice : "also supports\n(SYCL CPU backend)"
+
+legend bottom right
+  **Connection Legend**
+  → implements: Programming model implementation
+  → executes on: Hardware target execution
+end legend
+
+@enduml
+OneAPI ..> AMDDevice : "experimental\n(SYCL AMD backend)"
+
+note top of APILayer
+    **Programming Model Layer**
+    Defines syntax, semantics, and
+    compilation model for parallel code
+end note
+
+note left of DeviceLayer
+    **Hardware Abstraction Layer**
+    Categorizes computational devices
+    by architecture and capabilities
+end note
+
+note bottom of ExecutorLayer
+    **Strategy Implementation Layer**
+    Combines API + hardware-specific
+    optimizations and execution patterns
+end note
+
+note as FlexibilityNote
+    **Flexibility Benefits**
+    • New hardware → Add device kind
+    • New API → Add programming model  
+    • New optimization → Add executor
+    • Mix and match for best performance
+end note
+
+note as ExampleMappings
+    **Example Valid Combinations**
+    Host API + CPU → Serial or OpenMP
+    CUDA API + NVIDIA GPU → CUDA executor
+    OneAPI + Intel GPU → SYCL executor
+    OneAPI + CPU → SYCL CPU backend
+end note
+
+' Legend with dummy classes showing connection types
+package "Connection Legend" {
+  class A
+note bottom of OneAPIExec
+  **Connection Legend**
+  → implements: Programming model implementation
+  → executes on: Hardware target execution
+end note
+
+@enduml

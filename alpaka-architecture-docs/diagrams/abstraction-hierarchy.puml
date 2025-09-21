@@ -1,0 +1,206 @@
+@startuml
+title Alpaka Redundant Hierarchical Parallelism - Abstraction Hierarchy
+
+skinparam class {
+    BackgroundColor LightYellow
+    BorderColor Orange
+    ArrowColor DarkBlue
+    FontColor Black
+    FontSize 11
+}
+
+skinparam note {
+    BackgroundColor LightGreen
+    BorderColor Green
+    FontColor Black
+}
+
+' Parallelism Hierarchy
+class Grid {
+    + Sequential/Parallel execution
+    + Event-based synchronization
+    + Multiple queues support
+    --
+    Backend Mapping:
+    • CUDA: Grid of blocks
+    • OpenMP: Parallel region  
+    • CPU: Thread pool
+}
+
+class Block {
+    + Independent execution
+    + Shared memory access
+    + No inter-block sync
+    --
+    Backend Mapping:
+    • CUDA: Thread block
+    • OpenMP: Team
+    • CPU: Work group
+}
+
+class Warp {
+    + Lock-step execution
+    + SIMD operations
+    + Implicit synchronization
+    --
+    Backend Mapping:
+    • CUDA: Warp (32 threads)
+    • CPU: SIMD vector width
+    • SYCL: Sub-group
+}
+
+class Thread {
+    + Fine-grained parallelism
+    + Block-local barriers
+    + Atomic operations
+    --
+    Backend Mapping:
+    • CUDA: Individual thread
+    • OpenMP: Thread in team
+    • CPU: OS thread
+}
+
+class Element {
+    + Sequential processing
+    + Register optimization
+    + Vectorization opportunity
+    --
+    Backend Mapping:
+    • Loop within thread
+    • Multiple data per thread
+}
+
+' Memory Hierarchy
+class GlobalMemory {
+    + Accessible by all threads
+    + Largest but slowest
+    + Host-device transfers
+    --
+    Properties:
+    • High latency
+    • High bandwidth
+    • Coalescing important
+}
+
+class SharedMemory {
+    + Block-local memory
+    + Fast access
+    + Limited size
+    --
+    Properties:
+    • Low latency
+    • High bandwidth
+    • Explicit management
+}
+
+class Registers {
+    + Thread-private memory
+    + Fastest access
+    + Automatic allocation
+    --
+    Properties:
+    • Lowest latency
+    • Limited capacity
+    • Compiler managed
+}
+
+' Abstraction Layers
+package "Backend Abstraction" {
+    class DeviceAbstraction {
+        + Device enumeration
+        + Property queries
+        + Resource management
+    }
+    
+    class QueueAbstraction {
+        + Asynchronous execution
+        + Event synchronization
+        + Task dependencies
+    }
+    
+    class MemoryAbstraction {
+        + Buffer allocation
+        + Transfer operations
+        + View management
+    }
+}
+
+' Relationships - Parallelism Hierarchy
+Grid ||--o{ Block : "contains"
+Block ||--o{ Warp : "organized into"
+Warp ||--o{ Thread : "executes"
+Thread ||--o{ Element : "processes"
+
+' Relationships - Memory Access
+Thread --> GlobalMemory : "reads/writes"
+Thread --> Registers : "private access"
+Block --> SharedMemory : "shared access"
+Warp --> GlobalMemory : "coalesced access"
+
+' Abstraction relationships
+Grid --> DeviceAbstraction : "uses"
+Grid --> QueueAbstraction : "scheduled by"
+Thread --> MemoryAbstraction : "accesses through"
+
+' Synchronization relationships
+Grid ..> Grid : "Event sync\nbetween queues"
+Thread ..> Thread : "Block barriers\nAtomic ops"
+Warp ..> Warp : "Implicit sync\nSIMD operations"
+
+note top of Grid
+    **Grid Level**
+    - Entire computational problem
+    - Can run sequentially in queue
+    - Can run parallel across queues
+    - Event-based synchronization
+end note
+
+note right of Block
+    **Block Level**
+    - Independent groups of threads
+    - Shared memory allocation
+    - No synchronization between blocks
+    - Scalable across devices
+end note
+
+note right of Warp
+    **Warp Level**
+    - Lock-step execution model
+    - Memory coalescing
+    - Predicated execution for branches
+    - Latency hiding through warps
+end note
+
+note bottom of Thread
+    **Thread Level**
+    - Individual execution context
+    - Block-local synchronization
+    - Atomic operations support
+    - Register allocation
+end note
+
+note bottom of Element
+    **Element Level**
+    - Sequential data processing
+    - Register usage optimization
+    - Vectorization opportunities
+    - Multiple elements per thread
+end note
+
+note left of SharedMemory
+    **Memory Hierarchy**
+    Each level provides different
+    access patterns and performance
+    characteristics optimized for
+    the parallelism level
+end note
+
+legend bottom right
+  **Connection Legend**
+  → uses: Component dependency
+  → scheduled by: Queue scheduling
+  → accesses through: Memory access path
+  ..> : Synchronization relationship
+end legend
+
+@enduml

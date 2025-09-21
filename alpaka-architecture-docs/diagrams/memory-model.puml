@@ -1,0 +1,177 @@
+@startuml
+title Alpaka Memory Model and Management Architecture
+
+skinparam rectangle {
+    BackgroundColor LightCyan
+    BorderColor DarkBlue
+    FontColor Black
+}
+
+skinparam cloud {
+    BackgroundColor LightPink
+    BorderColor Red
+    FontColor Black
+}
+
+' Memory Hierarchy
+rectangle "Host System" {
+    cloud "Host Memory" as HostMem {
+        [System RAM]
+        [Pageable Memory]
+        [Pinned Memory]
+    }
+    
+    rectangle "Host CPU" as HostCPU {
+        [L1 Cache]
+        [L2 Cache] 
+        [L3 Cache]
+    }
+}
+
+rectangle "Device Memory Hierarchy" {
+    cloud "Global Memory" as GlobalMem {
+        [Device RAM]
+        [Texture Memory]
+        [Constant Memory]
+    }
+    
+    rectangle "On-Chip Memory" {
+        cloud "Shared Memory" as SharedMem {
+            [Block-Local Storage]
+            [Fast SRAM]
+        }
+        
+        cloud "Local Memory" as LocalMem {
+            [Thread-Private Memory]
+            [Spilled Registers]
+        }
+        
+        cloud "Registers" as Registers {
+            [Thread Registers]
+            [Hardware Managed]
+        }
+    }
+}
+
+' Alpaka Memory Abstractions
+package "Alpaka Memory Abstractions" {
+    rectangle "Memory Views" as Views {
+        [MdSpan<T>]
+        [View<T, N>]
+        [Buffer Management]
+    }
+    
+    rectangle "Memory Operations" as MemOps {
+        [Memory Allocation]
+        [Memory Transfer]
+        [Memory Mapping]
+    }
+    
+    rectangle "Access Patterns" as AccessPatterns {
+        [Iterators]
+        [Boundary Handling]
+        [Coalescing Support]
+    }
+}
+
+' Backend Implementations
+package "Backend Memory Management" {
+    rectangle "CUDA Memory" as CUDAMem {
+        [cudaMalloc]
+        [cudaMemcpy]
+        [cudaMemcpyAsync]
+    }
+    
+    rectangle "HIP Memory" as HIPMem {
+        [hipMalloc]
+        [hipMemcpy]
+        [hipMemcpyAsync]
+    }
+    
+    rectangle "SYCL Memory" as SYCLMem {
+        [sycl::buffer]
+        [sycl::accessor]
+        [Unified Memory]
+    }
+    
+    rectangle "Host Memory" as HostMemMgmt {
+        [std::allocator]
+        [aligned_alloc]
+        [mmap]
+    }
+}
+
+' Memory Access Relationships
+HostMem <--> GlobalMem : "Memory Transfer\n(PCIe/Interconnect)"
+GlobalMem --> SharedMem : "Load/Store\nCoalesced Access"
+SharedMem --> Registers : "Fast Access\nLow Latency"
+GlobalMem --> LocalMem : "Spilled Data\nLarge Objects"
+LocalMem --> Registers : "Register Spills"
+
+' Alpaka Abstraction Relationships
+Views --> MemOps : "uses"
+AccessPatterns --> Views : "operates on"
+MemOps --> CUDAMem : "CUDA backend"
+MemOps --> HIPMem : "HIP backend"
+MemOps --> SYCLMem : "SYCL backend"
+MemOps --> HostMemMgmt : "Host backend"
+
+' Thread Access Patterns
+note top of GlobalMem
+    **Global Memory**
+    • Accessible by all threads in grid
+    • High latency, high bandwidth
+    • Coalescing critical for performance
+    • Host-device transfer target
+end note
+
+note right of SharedMem
+    **Shared Memory**
+    • Block-local fast memory
+    • Explicit programmer management
+    • Bank conflicts affect performance
+    • Synchronization required
+end note
+
+note bottom of Registers
+    **Registers**
+    • Fastest memory tier
+    • Thread-private storage
+    • Limited capacity per thread
+    • Compiler managed allocation
+end note
+
+note left of Views
+    **Memory Views**
+    Multi-dimensional abstractions
+    that provide unified access
+    patterns across backends
+end note
+
+' Performance Characteristics
+note as N1
+    **Performance Hierarchy**
+    Registers: ~1 cycle
+    Shared Memory: ~10 cycles  
+    Global Memory: ~100-400 cycles
+    Host Memory: ~1000+ cycles
+end note
+
+' Memory Management Strategies
+note as N2
+    **Alpaka Memory Strategy**
+    • Unified allocation interface
+    • Automatic lifetime management
+    • Backend-specific optimizations
+    • RAII resource handling
+end note
+
+legend bottom right
+  **Connection Legend**
+  ↔ Transfer: Bidirectional memory transfer
+  → uses: Component dependency  
+  → backend: Backend implementation
+  → operates on: Data type operations
+end legend
+
+@enduml
