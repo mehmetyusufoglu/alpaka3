@@ -1,0 +1,62 @@
+@startuml
+!include ../config/plantuml-config.iuml
+
+title Decision Flow — Conv2D and GEMM
+
+start
+:User calls op via CleanTensorOpContext;
+:Context holds Exec, Device, Queue;
+
+partition "Conv2D Flow" {
+  :Select provider type at compile-time
+   (select_conv_provider<Exec>::type);
+  if (provider.supports(Conv2D) && provider.isActive()) then (yes)
+    :Try typed path (CuDNN/MIOpen) if available;
+    if (typed call succeeds) then (Success)
+      :return Output;
+    else (Fail)
+      :Call conv2d_status(...);
+      if (status == Success) then (Yes)
+        :return Output;
+      else (No)
+        :fallback to ops::conv2d (generic alpaka kernel);
+      endif
+    endif
+  else (no)
+    :fallback to ops::conv2d (generic alpaka kernel);
+  endif
+}
+
+partition "GEMM Flow" {
+  :Select provider type at compile-time
+   (select_gemm_provider<Exec>::type);
+  if (provider.supports(GEMM) && provider.isActive()) then (yes)
+    :CUDA? cuBLAS path (stream set per-queue);
+    :HIP? rocBLAS path;
+    if (vendor path OK) then (Success)
+      :return;
+    else (Fail)
+      :gemm_status(...);
+      if (status == Success) then (Yes)
+        :return;
+      else (No)
+        :fallback to ops::gemm (generic kernel);
+      endif
+    endif
+  else (no)
+    :fallback to ops::gemm (generic kernel);
+  endif
+}
+
+stop
+
+legend right
+<b>Env flags</b>
+----
+ALPAKA_DISABLE_CUBLAS
+ALPAKA_USE_FP16
+ALPAKA_CONV2D_FORCE_TILED
+ALPAKA_OPS_VERBOSE
+endlegend
+
+@enduml

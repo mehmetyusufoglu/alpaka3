@@ -1,0 +1,30 @@
+@startuml
+!include ../config/plantuml-config.iuml
+
+title Tensor Execution Flow (Queue/Exec/Device)
+
+actor User
+rectangle "Host (CPU)" {
+  User --> (enqueue op)
+}
+
+rectangle "Alpaka" {
+  [Exec]
+  [Queue]
+  [Device]
+}
+
+rectangle "Tensor Op" {
+  [Prepare Buffers]
+  [FrameSpec]
+  [Kernel Enqueue]
+  [Mark Modified]
+}
+
+User --> [Queue] : enqueue(op)
+[Queue] --> [Kernel Enqueue]
+[Kernel Enqueue] --> [Device]
+[Device] --> [Mark Modified]
+
+Legend("Legend", "Exec: execution policy\nQueue: async ordered\nDevice: backend target")
+@enduml

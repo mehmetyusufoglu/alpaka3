@@ -1,0 +1,22 @@
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+'
+' Default PlantUML styling used across diagrams
+'
+skinparam shadowing false
+skinparam dpi 150
+skinparam monochrome false
+skinparam defaultTextAlignment left
+
+' Colors
+!define COLOR_PRIMARY #003366
+!define COLOR_ACCENT #0088CC
+!define COLOR_NEUTRAL #999999
+
+' Legend helper macro
+!procedure Legend($title, $items)
+legend right
+<b>$title</b>
+----
+$items
+end legend
+!endprocedure

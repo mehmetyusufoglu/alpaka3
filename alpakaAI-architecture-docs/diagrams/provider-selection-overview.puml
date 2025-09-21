@@ -1,0 +1,52 @@
+@startuml
+!include ../config/plantuml-config.iuml
+
+title Provider Selection — Compile-time vs Runtime
+
+package "Compile-time Selection" as CT {
+  class select_gemm_provider<Exec> {
+    +type = CuBLASProvider | RocBLASProvider | DefaultProvider
+  }
+  class select_conv_provider<Exec> {
+    +type = CuDNNProvider | MIOpenProvider | DefaultProvider
+  }
+  note right of select_gemm_provider<Exec>
+    Uses Exec type and BuildCaps (ALPAKA_HAS_*)
+    to select provider type at compile-time.
+  end note
+}
+
+package "Runtime Context" as RT {
+  class CleanTensorOpContext<Exec,Device,Queue> {
+    +getGemmProvider(): IOpProvider&
+    +getConvProvider(): IOpProvider&
+    +supportsOperation(op): bool
+  }
+  interface IOpProvider {
+    +getBackendName(): string
+    +supportsOperation(op): bool
+    +isActive(): bool
+  }
+  class DefaultProvider
+  class CuBLASProvider
+  class CuDNNProvider
+  class RocBLASProvider
+  class MIOpenProvider
+}
+
+CT -> RT : constructs provider instances (unique_ptr)
+IOpProvider <|.. DefaultProvider
+IOpProvider <|.. CuBLASProvider
+IOpProvider <|.. CuDNNProvider
+IOpProvider <|.. RocBLASProvider
+IOpProvider <|.. MIOpenProvider
+
+legend right
+<b>Legend</b>
+----
+Compile-time: template type selection
+Runtime: instance probing + isActive()
+Env flags may influence activation
+endlegend
+
+@enduml
