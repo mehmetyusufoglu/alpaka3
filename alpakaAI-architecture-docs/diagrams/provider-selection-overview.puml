@@ -34,19 +34,13 @@ package "Runtime Context" as RT {
   class MIOpenProvider
 }
 
-CT -> RT : constructs provider instances (unique_ptr)
-IOpProvider <|.. DefaultProvider
-IOpProvider <|.. CuBLASProvider
-IOpProvider <|.. CuDNNProvider
-IOpProvider <|.. RocBLASProvider
-IOpProvider <|.. MIOpenProvider
+CT -> RT : constructs (unique_ptr)
+IOpProvider <|.. DefaultProvider : implements
+IOpProvider <|.. CuBLASProvider : implements
+IOpProvider <|.. CuDNNProvider : implements
+IOpProvider <|.. RocBLASProvider : implements
+IOpProvider <|.. MIOpenProvider : implements
 
-legend right
-<b>Legend</b>
-----
-Compile-time: template type selection
-Runtime: instance probing + isActive()
-Env flags may influence activation
-endlegend
+Legend("Connection Legend", "constructs: compile-time created types to runtime context\nRuntime: instance probing + isActive()\nEnv flags may influence activation")
 
 @enduml

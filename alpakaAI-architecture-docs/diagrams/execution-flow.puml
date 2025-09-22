@@ -21,10 +21,13 @@ rectangle "Tensor Op" {
   [Mark Modified]
 }
 
-User --> [Queue] : enqueue(op)
-[Queue] --> [Kernel Enqueue]
-[Kernel Enqueue] --> [Device]
-[Device] --> [Mark Modified]
+User --> [Queue] : enqueues
+[Exec] -[#grey,dashed]-> [Queue] : schedules by
+[Queue] --> [Kernel Enqueue] : submits
+[Kernel Enqueue] --> [Device] : executes on
+[FrameSpec] -[#grey,dashed]-> [Kernel Enqueue] : configures
+[Prepare Buffers] -[#grey,dashed]-> [Kernel Enqueue] : prepares
+[Device] -[#grey,dotted]-> [Mark Modified] : synchronizes/coherence
 
-Legend("Legend", "Exec: execution policy\nQueue: async ordered\nDevice: backend target")
+Legend("Connection Legend", "uses: component dependency\nscheduled by: queue scheduling\naccesses through: memory/device path\nsynchronizes: waits/coherence update")
 @enduml

@@ -1,0 +1,90 @@
+@startuml
+!include ../config/plantuml-config.iuml
+
+title Decision Flow — Activations, Softmax, BatchNorm, Pooling
+
+start
+:User calls op via CleanTensorOpContext;
+:Context holds Exec, Device, Queue;
+
+partition "Activations Flow" {
+  :Select provider type at compile-time (if any);
+  if (provider.supports(Activations) && provider.isActive()) then (yes)
+    :Try typed path (e.g., cuDNN/MIOpen activation);
+    if (typed call succeeds) then (Success)
+      :return;
+    else (Fail)
+  :activation_status(...);\n[label: provider status path]
+      if (status == Success) then (Yes)
+        :return;
+      else (No)
+        :fallback to ops::activation (generic kernel);
+      endif
+    endif
+  else (no)
+  :fallback to ops::activation (generic kernel);\n[label: generic path]
+  endif
+}
+
+partition "Softmax Flow" {
+  :Select provider type at compile-time (if any);
+  if (provider.supports(Softmax) && provider.isActive()) then (yes)
+    :Try typed path (e.g., cuDNN/MIOpen softmax);
+    if (typed call succeeds) then (Success)
+      :return;
+    else (Fail)
+  :softmax_status(...);\n[label: provider status path]
+      if (status == Success) then (Yes)
+        :return;
+      else (No)
+        :fallback to ops::softmax (generic kernel);
+      endif
+    endif
+  else (no)
+  :fallback to ops::softmax (generic kernel);\n[label: generic path]
+  endif
+}
+
+partition "BatchNorm Flow" {
+  :Select provider type at compile-time (if any);
+  if (provider.supports(BatchNorm) && provider.isActive()) then (yes)
+    :Try typed path (e.g., cuDNN/MIOpen BN);
+    if (typed call succeeds) then (Success)
+      :return;
+    else (Fail)
+  :batchnorm_status(...);\n[label: provider status path]
+      if (status == Success) then (Yes)
+        :return;
+      else (No)
+        :fallback to ops::batchnorm (generic kernel)\nor host-side fold (BatchNormFold) during inference;
+      endif
+    endif
+  else (no)
+  :fallback to ops::batchnorm (generic kernel) or BatchNormFold;\n[label: generic/host path]
+  endif
+}
+
+partition "Pooling Flow" {
+  :Select provider type at compile-time (if any);
+  if (provider.supports(Pooling) && provider.isActive()) then (yes)
+    :Try typed path (e.g., cuDNN/MIOpen pooling);
+    if (typed call succeeds) then (Success)
+      :return;
+    else (Fail)
+  :pooling_status(...);\n[label: provider status path]
+      if (status == Success) then (Yes)
+        :return;
+      else (No)
+        :fallback to ops::pooling (generic kernel);
+      endif
+    endif
+  else (no)
+  :fallback to ops::pooling (generic kernel);\n[label: generic path]
+  endif
+}
+
+stop
+
+Legend("Legend", "provider status path: status-based vendor call\ngeneric path: Alpaka generic kernel fallback\nBN may use host-side fold (inference)\nEnv flags (examples):\n  ALPAKA_USE_FP16\n  ALPAKA_OPS_VERBOSE")
+
+@enduml

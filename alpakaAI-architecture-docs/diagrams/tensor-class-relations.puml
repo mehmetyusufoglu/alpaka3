@@ -35,10 +35,10 @@ package "Ops Front-Ends" as Ops {
   class Layer
 }
 
-TensorView --> TensorTRD : view of
-TensorDescriptor --> TensorTRD : describes
+TensorView --> TensorTRD : accesses through: view
+TensorDescriptor --> TensorTRD : describes layout
 
-CleanTensorOpContext --> IOpProvider : holds/returns
+CleanTensorOpContext --> IOpProvider : uses: provider API
 ProviderRegistry --> IOpProvider : constructs/selects
 BuildCaps --> ProviderRegistry : build flags
 
@@ -48,16 +48,11 @@ IOpProvider <|.. CuDNNProvider
 IOpProvider <|.. RocBLASProvider
 IOpProvider <|.. MIOpenProvider
 
-Ops ..> TensorTRD : operates on
+Ops ..> TensorTRD : uses: operates on
 Ops ..> CleanTensorOpContext : optional vendor path
-Ops ..> OpStatus : status paths
-BatchNorm ..> CleanTensorOpContext
+Ops ..> OpStatus : status path
+BatchNorm ..> CleanTensorOpContext : provider path
 
-legend right
-<b>Legend</b>
-----
-Solid: inheritance / composition
-Dashed: usage/dependency
-endlegend
+Legend("Connection Legend", "uses: component dependency\naccesses through: memory/view path\nprovider path: status/typed vendor call\nSolid: inheritance/composition\nDashed: usage/dependency")
 
 @enduml

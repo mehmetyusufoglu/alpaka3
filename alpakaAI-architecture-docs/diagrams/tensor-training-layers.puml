@@ -28,19 +28,21 @@ package "Layers (Training)" {
   class PoolingLayers
 }
 
-TrainingOps ..> TensorTRD
-TrainingSequential ..> TrainingOps
-TrainingSequential ..> InferenceOps
+TrainingOps ..> TensorTRD : uses
+TrainingSequential ..> TrainingOps : composes
+TrainingSequential ..> InferenceOps : composes
 
-BatchNormLayer --> BatchNormFold
-Conv2DLayer --> Conv2D
-LinearLayers --> Gemm
-NormalizationLayers --> BatchNormFold
-ReLULayer --> Activations
-PoolingLayers --> InferenceOps
+BatchNormLayer --> BatchNormFold : uses
+Conv2DLayer --> Conv2D : uses
+LinearLayers --> Gemm : uses
+NormalizationLayers --> BatchNormFold : uses
+ReLULayer --> Activations : uses
+PoolingLayers --> InferenceOps : uses
 
-Conv2D ..> CleanTensorOpContext
-Gemm ..> CleanTensorOpContext
-BatchNorm ..> CleanTensorOpContext
+Conv2D ..> CleanTensorOpContext : provider path
+Gemm ..> CleanTensorOpContext : provider path
+BatchNorm ..> CleanTensorOpContext : provider path
+
+Legend("Connection Legend", "uses: component dependency\ncomposes: layer sequencing/dependency\nprovider path: vendor-backed call via context")
 
 @enduml

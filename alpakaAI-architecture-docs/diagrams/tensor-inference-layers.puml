@@ -31,24 +31,26 @@ package "Layers (Inference)" {
   class BertLayers
 }
 
-Ops ..> TensorTRD
-Ops ..> CleanTensorOpContext : optional vendor path
-Conv2DLayer --> Conv2D
-LinearLayers --> Gemm
-ReLULayer --> Activations
-SoftmaxLayer --> Softmax
-NormalizationLayers --> BatchNormFold
-PoolingLayers --> Pooling
-EmbeddingLayers --> InferenceOps
-AttentionLayers --> InferenceOps
-BertLayers --> InferenceOps
+Ops ..> TensorTRD : uses
+Ops ..> CleanTensorOpContext : provider path (optional)
+Conv2DLayer --> Conv2D : uses
+LinearLayers --> Gemm : uses
+ReLULayer --> Activations : uses
+SoftmaxLayer --> Softmax : uses
+NormalizationLayers --> BatchNormFold : uses
+PoolingLayers --> Pooling : uses
+EmbeddingLayers --> InferenceOps : uses
+AttentionLayers --> InferenceOps : uses
+BertLayers --> InferenceOps : uses
 
-Conv2D ..> CleanTensorOpContext
-Gemm ..> CleanTensorOpContext
-BatchNorm ..> CleanTensorOpContext
+Conv2D ..> CleanTensorOpContext : provider path
+Gemm ..> CleanTensorOpContext : provider path
+BatchNorm ..> CleanTensorOpContext : provider path
 
 note right of BatchNormFold
 Host-side fold used during inference; no provider path
 end note
+
+Legend("Connection Legend", "uses: component dependency\nprovider path: vendor-backed call via context\nno provider path: host-side fold/affine")
 
 @enduml

@@ -18,5 +18,5 @@ legend right
 <b>$title</b>
 ----
 $items
-end legend
+endlegend
 !endprocedure
