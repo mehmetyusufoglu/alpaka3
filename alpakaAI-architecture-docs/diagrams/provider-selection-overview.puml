@@ -4,13 +4,13 @@
 title Provider Selection — Compile-time vs Runtime
 
 package "Compile-time Selection" as CT {
-  class select_gemm_provider<Exec> {
+  class "select_gemm_provider<Exec>" as SelectGemmProvider {
     +type = CuBLASProvider | RocBLASProvider | DefaultProvider
   }
-  class select_conv_provider<Exec> {
+  class "select_conv_provider<Exec>" as SelectConvProvider {
     +type = CuDNNProvider | MIOpenProvider | DefaultProvider
   }
-  note right of select_gemm_provider<Exec>
+  note right of SelectGemmProvider
     Uses Exec type and BuildCaps (ALPAKA_HAS_*)
     to select provider type at compile-time.
   end note
