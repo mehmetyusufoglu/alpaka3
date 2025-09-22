@@ -1,0 +1,54 @@
+@startuml
+!include ../config/plantuml-config.iuml
+
+title Inference Layers and Dependencies
+
+package "Core" {
+  class "Tensor<T,Rank,Device>" as TensorTRD
+  class CleanTensorOpContext
+}
+
+package "Ops" {
+  class InferenceOps
+  class Conv2D
+  class Gemm
+  class Activations
+  class BatchNorm
+  class BatchNormFold
+  class Pooling
+  class Softmax
+}
+
+package "Layers (Inference)" {
+  class Conv2DLayer
+  class LinearLayers
+  class ReLULayer
+  class SoftmaxLayer
+  class NormalizationLayers
+  class PoolingLayers
+  class EmbeddingLayers
+  class AttentionLayers
+  class BertLayers
+}
+
+Ops ..> TensorTRD
+Ops ..> CleanTensorOpContext : optional vendor path
+Conv2DLayer --> Conv2D
+LinearLayers --> Gemm
+ReLULayer --> Activations
+SoftmaxLayer --> Softmax
+NormalizationLayers --> BatchNormFold
+PoolingLayers --> Pooling
+EmbeddingLayers --> InferenceOps
+AttentionLayers --> InferenceOps
+BertLayers --> InferenceOps
+
+Conv2D ..> CleanTensorOpContext
+Gemm ..> CleanTensorOpContext
+BatchNorm ..> CleanTensorOpContext
+
+note right of BatchNormFold
+Host-side fold used during inference; no provider path
+end note
+
+@enduml

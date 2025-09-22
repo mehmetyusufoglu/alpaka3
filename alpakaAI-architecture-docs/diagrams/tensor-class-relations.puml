@@ -1,0 +1,63 @@
+@startuml
+!include ../config/plantuml-config.iuml
+
+title Tensor Core and Provider Relations
+
+package "Core Tensor" as Core {
+  class "Tensor<T,Rank,Device>" as TensorTRD
+  class TensorView
+  class TensorDescriptor
+  enum OpStatus
+}
+
+package "Runtime Context" as Ctx {
+  class CleanTensorOpContext
+  interface IOpProvider
+  class ProviderRegistry
+  class BuildCaps
+}
+
+package "Providers" as Prov {
+  class DefaultProvider
+  class CuBLASProvider
+  class CuDNNProvider
+  class RocBLASProvider
+  class MIOpenProvider
+}
+
+package "Ops Front-Ends" as Ops {
+  class Conv2D
+  class Gemm
+  class Activations
+  class BatchNorm
+  class InferenceOps
+  class HighLevel
+  class Layer
+}
+
+TensorView --> TensorTRD : view of
+TensorDescriptor --> TensorTRD : describes
+
+CleanTensorOpContext --> IOpProvider : holds/returns
+ProviderRegistry --> IOpProvider : constructs/selects
+BuildCaps --> ProviderRegistry : build flags
+
+IOpProvider <|.. DefaultProvider
+IOpProvider <|.. CuBLASProvider
+IOpProvider <|.. CuDNNProvider
+IOpProvider <|.. RocBLASProvider
+IOpProvider <|.. MIOpenProvider
+
+Ops ..> TensorTRD : operates on
+Ops ..> CleanTensorOpContext : optional vendor path
+Ops ..> OpStatus : status paths
+BatchNorm ..> CleanTensorOpContext
+
+legend right
+<b>Legend</b>
+----
+Solid: inheritance / composition
+Dashed: usage/dependency
+endlegend
+
+@enduml

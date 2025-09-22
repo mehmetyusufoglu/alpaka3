@@ -1,0 +1,46 @@
+@startuml
+!include ../config/plantuml-config.iuml
+
+title Training Layers and Dependencies
+
+package "Core" {
+  class "Tensor<T,Rank,Device>" as TensorTRD
+  class CleanTensorOpContext
+}
+
+package "Ops (Training)" {
+  class TrainingOps
+  class TrainingSequential
+  class InferenceOps
+  class Conv2D
+  class Gemm
+  class Activations
+  class BatchNorm
+  class BatchNormFold
+}
+
+package "Layers (Training)" {
+  class BatchNormLayer
+  class Conv2DLayer
+  class LinearLayers
+  class NormalizationLayers
+  class ReLULayer
+  class PoolingLayers
+}
+
+TrainingOps ..> TensorTRD
+TrainingSequential ..> TrainingOps
+TrainingSequential ..> InferenceOps
+
+BatchNormLayer --> BatchNormFold
+Conv2DLayer --> Conv2D
+LinearLayers --> Gemm
+NormalizationLayers --> BatchNormFold
+ReLULayer --> Activations
+PoolingLayers --> InferenceOps
+
+Conv2D ..> CleanTensorOpContext
+Gemm ..> CleanTensorOpContext
+BatchNorm ..> CleanTensorOpContext
+
+@enduml
