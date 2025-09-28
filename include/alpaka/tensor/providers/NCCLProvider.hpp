@@ -11,7 +11,23 @@
 #include <string>
 #include <vector>
 
-#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
+#ifndef ALPAKA_TENSOR_USE_NCCL
+#    if defined(ALPAKA_HAS_NCCL)
+#        if defined(__has_include)
+#            if __has_include(<cuda_runtime_api.h>) && __has_include(<nccl.h>)
+#                define ALPAKA_TENSOR_USE_NCCL 1
+#            else
+#                define ALPAKA_TENSOR_USE_NCCL 0
+#            endif
+#        else
+#            define ALPAKA_TENSOR_USE_NCCL 1
+#        endif
+#    else
+#        define ALPAKA_TENSOR_USE_NCCL 0
+#    endif
+#endif
+
+#if ALPAKA_TENSOR_USE_NCCL
 #    include <cuda_runtime_api.h>
 #    include <nccl.h>
 #endif
@@ -86,19 +102,19 @@ namespace alpaka::tensor
     void finalizeMultiProcess() const;
     OpStatus initializeSingleDevice() const;
     std::size_t resolveLocalRank(CollectiveExecutionContext const& ctx) const;
-#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
+#if ALPAKA_TENSOR_USE_NCCL
     ncclComm_t resolveCommunicator(std::size_t localRank) const;
 #endif
     void updateWorldTracking(std::size_t localRank) const;
     void setCudaDeviceForRank(std::size_t localRank) const;
 
-#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
+#if ALPAKA_TENSOR_USE_NCCL
         ncclDataType_t mapDataType(ops::CollectiveDataType dtype) const;
         ncclRedOp_t mapReduction(ops::CollectiveReduction reduction) const;
 #endif
 
     private:
-#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
+#if ALPAKA_TENSOR_USE_NCCL
         mutable NCCLProvider::ExecutionMode mode_ = NCCLProvider::ExecutionMode::Undefined;
         mutable ncclComm_t singleDeviceComm_ = nullptr;
         mutable bool singleDeviceInitialized_ = false;
@@ -117,7 +133,7 @@ namespace alpaka::tensor
     };
 } // namespace alpaka::tensor
 
-#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
+#if ALPAKA_TENSOR_USE_NCCL
 namespace alpaka::tensor
 {
     inline NCCLProvider::~NCCLProvider()

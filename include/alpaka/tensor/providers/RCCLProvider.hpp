@@ -11,7 +11,23 @@
 #include <string>
 #include <vector>
 
-#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+#ifndef ALPAKA_TENSOR_USE_RCCL
+#    if defined(ALPAKA_HAS_RCCL)
+#        if defined(__has_include)
+#            if __has_include(<hip/hip_runtime_api.h>) && __has_include(<rccl/rccl.h>)
+#                define ALPAKA_TENSOR_USE_RCCL 1
+#            else
+#                define ALPAKA_TENSOR_USE_RCCL 0
+#            endif
+#        else
+#            define ALPAKA_TENSOR_USE_RCCL 1
+#        endif
+#    else
+#        define ALPAKA_TENSOR_USE_RCCL 0
+#    endif
+#endif
+
+#if ALPAKA_TENSOR_USE_RCCL
 #    include <hip/hip_runtime_api.h>
 #    include <rccl/rccl.h>
 #endif
@@ -86,19 +102,19 @@ namespace alpaka::tensor
         void finalizeMultiProcess() const;
     OpStatus initializeSingleDevice() const;
     std::size_t resolveLocalRank(CollectiveExecutionContext const& ctx) const;
-#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+#if ALPAKA_TENSOR_USE_RCCL
     ncclComm_t resolveCommunicator(std::size_t localRank) const;
 #endif
         void updateWorldTracking(std::size_t localRank) const;
         void setDeviceForRank(std::size_t localRank) const;
 
-#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+#if ALPAKA_TENSOR_USE_RCCL
         ncclDataType_t mapDataType(ops::CollectiveDataType dtype) const;
         ncclRedOp_t mapReduction(ops::CollectiveReduction reduction) const;
 #endif
 
     private:
-#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+#if ALPAKA_TENSOR_USE_RCCL
         mutable RCCLProvider::ExecutionMode mode_ = RCCLProvider::ExecutionMode::Undefined;
         mutable ncclComm_t singleDeviceComm_ = nullptr;
         mutable bool singleDeviceInitialized_ = false;
@@ -117,7 +133,7 @@ namespace alpaka::tensor
     };
 } // namespace alpaka::tensor
 
-#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+#if ALPAKA_TENSOR_USE_RCCL
 namespace alpaka::tensor
 {
     inline RCCLProvider::~RCCLProvider()
