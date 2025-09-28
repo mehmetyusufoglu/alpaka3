@@ -6,11 +6,12 @@
 #include <alpaka/tensor/ops/CollectiveOps.hpp>
 #include <alpaka/tensor/providers/ICollectiveProvider.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-#ifdef ALPAKA_HAS_NCCL
+#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
 #    include <cuda_runtime_api.h>
 #    include <nccl.h>
 #endif
@@ -20,6 +21,10 @@ namespace alpaka::tensor
     class NCCLProvider : public ICollectiveProvider
     {
     public:
+        using ExecutionMode = ICollectiveProvider::ExecutionMode;
+        using MultiDeviceGroup = ICollectiveProvider::MultiDeviceGroup;
+        using MultiProcessBootstrap = ICollectiveProvider::MultiProcessBootstrap;
+
         struct Diagnostics
         {
             int deviceCount = 0;
@@ -35,6 +40,8 @@ namespace alpaka::tensor
         std::string getBackendName() const override;
         bool supportsOperation(OpType op) const override;
         bool isActive() const override;
+        bool supportsMode(ExecutionMode mode) const override;
+        ExecutionMode currentMode() const override;
 
         Diagnostics diagnostics() const;
 
@@ -44,6 +51,12 @@ namespace alpaka::tensor
 
         std::size_t worldSize() const override;
         std::size_t worldRank() const override;
+
+        OpStatus initializeMultiDevice(MultiDeviceGroup const& group) override;
+        OpStatus initializeMultiProcess(MultiProcessBootstrap const& bootstrap) override;
+        std::size_t localParticipantCount() const override;
+        void setActiveParticipant(std::size_t localRank) override;
+        void synchronizeParticipants() override;
 
     protected:
         OpStatus allreduce_impl(
@@ -68,26 +81,43 @@ namespace alpaka::tensor
     private:
         void ensureInitialized() const;
         void finalize() noexcept;
+    void finalizeMultiDevice() const;
+    void finalizeSingleDevice() const;
+    void finalizeMultiProcess() const;
+    OpStatus initializeSingleDevice() const;
+    std::size_t resolveLocalRank(CollectiveExecutionContext const& ctx) const;
+#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
+    ncclComm_t resolveCommunicator(std::size_t localRank) const;
+#endif
+    void updateWorldTracking(std::size_t localRank) const;
+    void setCudaDeviceForRank(std::size_t localRank) const;
 
-#ifdef ALPAKA_HAS_NCCL
+#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
         ncclDataType_t mapDataType(ops::CollectiveDataType dtype) const;
         ncclRedOp_t mapReduction(ops::CollectiveReduction reduction) const;
 #endif
 
     private:
-#ifdef ALPAKA_HAS_NCCL
-        mutable ncclComm_t comm_ = nullptr;
-        mutable bool initialized_ = false;
+#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
+        mutable NCCLProvider::ExecutionMode mode_ = NCCLProvider::ExecutionMode::Undefined;
+        mutable ncclComm_t singleDeviceComm_ = nullptr;
+        mutable bool singleDeviceInitialized_ = false;
+        mutable std::vector<ncclComm_t> multiDeviceComms_{};
+        mutable std::vector<int> multiDeviceDeviceIds_{};
+        mutable std::vector<void*> multiDeviceQueues_{};
+        mutable std::size_t activeParticipant_ = 0;
+        mutable ncclComm_t multiProcessComm_ = nullptr;
         mutable bool active_ = false;
         mutable int worldSize_ = 1;
         mutable int worldRank_ = 0;
+        mutable std::size_t localSize_ = 1;
 #else
         static constexpr bool active_ = false;
 #endif
     };
 } // namespace alpaka::tensor
 
-#ifdef ALPAKA_HAS_NCCL
+#if defined(ALPAKA_HAS_NCCL) && defined(ALPAKA_ACC_GPU_CUDA_ENABLED)
 namespace alpaka::tensor
 {
     inline NCCLProvider::~NCCLProvider()
@@ -271,60 +301,286 @@ namespace alpaka::tensor
 
     inline void NCCLProvider::ensureInitialized() const
     {
-        if(initialized_)
+    if(mode_ != NCCLProvider::ExecutionMode::Undefined || singleDeviceInitialized_)
             return;
+
+        initializeSingleDevice();
+    }
+
+    inline void NCCLProvider::finalize() noexcept
+    {
+        finalizeSingleDevice();
+        finalizeMultiDevice();
+        finalizeMultiProcess();
+
+    mode_ = NCCLProvider::ExecutionMode::Undefined;
+        active_ = false;
+        worldSize_ = 1;
+        worldRank_ = 0;
+        localSize_ = 1;
+        activeParticipant_ = 0;
+    }
+
+    inline void NCCLProvider::finalizeSingleDevice() const
+    {
+        if(singleDeviceComm_ != nullptr)
+        {
+            ncclCommDestroy(singleDeviceComm_);
+            singleDeviceComm_ = nullptr;
+        }
+        singleDeviceInitialized_ = false;
+    }
+
+    inline void NCCLProvider::finalizeMultiDevice() const
+    {
+        if(!multiDeviceComms_.empty())
+        {
+            for(ncclComm_t comm : multiDeviceComms_)
+            {
+                if(comm != nullptr)
+                {
+                    ncclCommDestroy(comm);
+                }
+            }
+        }
+        multiDeviceComms_.clear();
+        multiDeviceDeviceIds_.clear();
+        multiDeviceQueues_.clear();
+    }
+
+    inline void NCCLProvider::finalizeMultiProcess() const
+    {
+        if(multiProcessComm_ != nullptr)
+        {
+            ncclCommDestroy(multiProcessComm_);
+            multiProcessComm_ = nullptr;
+        }
+    }
+
+    inline OpStatus NCCLProvider::initializeSingleDevice() const
+    {
+        if(singleDeviceInitialized_ && singleDeviceComm_ != nullptr)
+        {
+            mode_ = NCCLProvider::ExecutionMode::SingleProcessSingleDevice;
+            active_ = true;
+            worldSize_ = 1;
+            worldRank_ = 0;
+            localSize_ = 1;
+            return OpStatus::Success;
+        }
 
         int deviceId = 0;
         cudaError_t cudaStatus = cudaGetDevice(&deviceId);
         if(cudaStatus != cudaSuccess)
         {
-            initialized_ = true;
+            singleDeviceInitialized_ = true;
             active_ = false;
-            return;
+            return OpStatus::Unsupported;
         }
 
-        ncclResult_t ncclStatus = ncclCommInitAll(&comm_, 1, &deviceId);
-        if(ncclStatus != ncclSuccess)
+        ncclResult_t status = ncclCommInitAll(&singleDeviceComm_, 1, &deviceId);
+        if(status != ncclSuccess)
         {
-            initialized_ = true;
+            singleDeviceComm_ = nullptr;
+            singleDeviceInitialized_ = true;
             active_ = false;
-            comm_ = nullptr;
-            return;
+            return OpStatus::Error;
         }
 
-        int size = 0;
-        if(ncclCommCount(comm_, &size) == ncclSuccess && size > 0)
-        {
-            worldSize_ = size;
-        }
-        else
-        {
-            worldSize_ = 1;
-        }
-
-        int rank = 0;
-        if(ncclCommUserRank(comm_, &rank) == ncclSuccess)
-        {
-            worldRank_ = rank;
-        }
-        else
-        {
-            worldRank_ = 0;
-        }
-
+    singleDeviceInitialized_ = true;
+    mode_ = NCCLProvider::ExecutionMode::SingleProcessSingleDevice;
         active_ = true;
-        initialized_ = true;
+        worldSize_ = 1;
+        worldRank_ = 0;
+        localSize_ = 1;
+        activeParticipant_ = 0;
+        return OpStatus::Success;
     }
 
-    inline void NCCLProvider::finalize() noexcept
+    inline bool NCCLProvider::supportsMode(NCCLProvider::ExecutionMode mode) const
     {
-        if(comm_ != nullptr)
+        switch(mode)
         {
-            ncclCommDestroy(comm_);
-            comm_ = nullptr;
+        case NCCLProvider::ExecutionMode::Undefined:
+        case NCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+        case NCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+        case NCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+            return true;
+        default:
+            return false;
         }
-        initialized_ = false;
-        active_ = false;
+    }
+
+    inline NCCLProvider::ExecutionMode NCCLProvider::currentMode() const
+    {
+        return mode_;
+    }
+
+    inline OpStatus NCCLProvider::initializeMultiDevice(MultiDeviceGroup const& group)
+    {
+        if(group.participants.empty())
+            return OpStatus::Unsupported;
+
+        finalize();
+
+        std::size_t count = group.participants.size();
+        multiDeviceComms_.resize(count, nullptr);
+        multiDeviceDeviceIds_.resize(count);
+        multiDeviceQueues_.resize(count, nullptr);
+
+        for(std::size_t i = 0; i < count; ++i)
+        {
+            auto const& participant = group.participants[i];
+            multiDeviceDeviceIds_[i] = static_cast<int>(participant.localRank);
+            multiDeviceQueues_[i] = participant.queue;
+        }
+
+        ncclResult_t status = ncclCommInitAll(
+            multiDeviceComms_.data(),
+            static_cast<int>(count),
+            multiDeviceDeviceIds_.data());
+        if(status != ncclSuccess)
+        {
+            finalize();
+            return OpStatus::Error;
+        }
+
+    mode_ = NCCLProvider::ExecutionMode::SingleProcessMultiDevice;
+        active_ = true;
+        worldSize_ = static_cast<int>(count);
+        worldRank_ = 0;
+        localSize_ = count;
+        activeParticipant_ = 0;
+        setCudaDeviceForRank(activeParticipant_);
+        return OpStatus::Success;
+    }
+
+    inline OpStatus NCCLProvider::initializeMultiProcess(MultiProcessBootstrap const& bootstrap)
+    {
+        if(bootstrap.uniqueId == nullptr || bootstrap.uniqueIdSize != sizeof(ncclUniqueId))
+        {
+            return OpStatus::Unsupported;
+        }
+
+        finalize();
+
+        auto const* id = static_cast<ncclUniqueId const*>(bootstrap.uniqueId);
+        ncclComm_t comm = nullptr;
+        ncclResult_t status = ncclCommInitRank(
+            &comm,
+            static_cast<int>(bootstrap.worldSize),
+            *id,
+            static_cast<int>(bootstrap.worldRank));
+        if(status != ncclSuccess)
+        {
+            finalize();
+            return OpStatus::Error;
+        }
+
+        multiProcessComm_ = comm;
+    mode_ = NCCLProvider::ExecutionMode::MultiProcessSingleDevice;
+        active_ = true;
+        worldSize_ = static_cast<int>(bootstrap.worldSize);
+        worldRank_ = static_cast<int>(bootstrap.worldRank);
+        localSize_ = bootstrap.localSize;
+        activeParticipant_ = bootstrap.localRank;
+        return OpStatus::Success;
+    }
+
+    inline std::size_t NCCLProvider::localParticipantCount() const
+    {
+        return localSize_;
+    }
+
+    inline void NCCLProvider::setActiveParticipant(std::size_t localRank)
+    {
+        activeParticipant_ = localRank;
+        updateWorldTracking(localRank);
+        setCudaDeviceForRank(localRank);
+    }
+
+    inline void NCCLProvider::synchronizeParticipants()
+    {
+        switch(mode_)
+        {
+    case NCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+        {
+            for(std::size_t i = 0; i < multiDeviceDeviceIds_.size(); ++i)
+            {
+                setCudaDeviceForRank(i);
+                cudaDeviceSynchronize();
+            }
+            break;
+        }
+    case NCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+    case NCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+        default:
+            cudaDeviceSynchronize();
+            break;
+        }
+    }
+
+    inline std::size_t NCCLProvider::resolveLocalRank(CollectiveExecutionContext const& ctx) const
+    {
+    if(mode_ == NCCLProvider::ExecutionMode::SingleProcessMultiDevice && ctx.queue != nullptr)
+        {
+            for(std::size_t i = 0; i < multiDeviceQueues_.size(); ++i)
+            {
+                if(multiDeviceQueues_[i] == ctx.queue)
+                    return i;
+            }
+        }
+
+        if(ctx.localRank < multiDeviceComms_.size())
+            return ctx.localRank;
+
+        return activeParticipant_;
+    }
+
+    inline ncclComm_t NCCLProvider::resolveCommunicator(std::size_t localRank) const
+    {
+        switch(mode_)
+        {
+    case NCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+            return singleDeviceComm_;
+    case NCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+            return (localRank < multiDeviceComms_.size()) ? multiDeviceComms_[localRank] : nullptr;
+    case NCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+            return multiProcessComm_;
+        default:
+            return nullptr;
+        }
+    }
+
+    inline void NCCLProvider::updateWorldTracking(std::size_t localRank) const
+    {
+        switch(mode_)
+        {
+    case NCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+            worldSize_ = static_cast<int>(multiDeviceComms_.size());
+            worldRank_ = static_cast<int>(localRank);
+            break;
+    case NCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+            worldSize_ = 1;
+            worldRank_ = 0;
+            break;
+    case NCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+            break;
+        default:
+            break;
+        }
+    }
+
+    inline void NCCLProvider::setCudaDeviceForRank(std::size_t localRank) const
+    {
+        if(mode_ != ExecutionMode::SingleProcessMultiDevice)
+            return;
+
+        if(localRank >= multiDeviceDeviceIds_.size())
+            return;
+
+        int deviceId = multiDeviceDeviceIds_[localRank];
+        cudaSetDevice(deviceId);
     }
 
     inline OpStatus NCCLProvider::allreduce_impl(
@@ -340,6 +596,13 @@ namespace alpaka::tensor
         if(!active_)
             return OpStatus::Unsupported;
 
+        std::size_t localRank = resolveLocalRank(ctx);
+        setCudaDeviceForRank(localRank);
+
+        ncclComm_t communicator = resolveCommunicator(localRank);
+        if(communicator == nullptr)
+            return OpStatus::Unsupported;
+
         cudaStream_t cudaStream = ctx.nativeQueue ? static_cast<cudaStream_t>(ctx.nativeQueue) : nullptr;
         ncclResult_t status = ncclAllReduce(
             sendBuffer,
@@ -347,7 +610,7 @@ namespace alpaka::tensor
             elementCount,
             mapDataType(dtype),
             mapReduction(reduction),
-            comm_,
+            communicator,
             cudaStream);
         if(status != ncclSuccess)
             return OpStatus::Error;
@@ -382,6 +645,13 @@ namespace alpaka::tensor
         if(!active_)
             return OpStatus::Unsupported;
 
+        std::size_t localRank = resolveLocalRank(ctx);
+        setCudaDeviceForRank(localRank);
+
+        ncclComm_t communicator = resolveCommunicator(localRank);
+        if(communicator == nullptr)
+            return OpStatus::Unsupported;
+
         cudaStream_t cudaStream = ctx.nativeQueue ? static_cast<cudaStream_t>(ctx.nativeQueue) : nullptr;
         ncclResult_t status = ncclBroadcast(
             static_cast<void const*>(buffer),
@@ -389,7 +659,7 @@ namespace alpaka::tensor
             elementCount,
             mapDataType(dtype),
             static_cast<int>(rootRank),
-            comm_,
+            communicator,
             cudaStream);
         if(status != ncclSuccess)
             return OpStatus::Error;
@@ -416,6 +686,13 @@ namespace alpaka::tensor
     {
         ensureInitialized();
         if(!active_)
+            return OpStatus::Unsupported;
+
+        std::size_t localRank = resolveLocalRank(ctx);
+        setCudaDeviceForRank(localRank);
+
+        ncclComm_t communicator = resolveCommunicator(localRank);
+        if(communicator == nullptr)
             return OpStatus::Unsupported;
 
         cudaStream_t cudaStream = ctx.nativeQueue ? static_cast<cudaStream_t>(ctx.nativeQueue) : nullptr;
@@ -454,6 +731,16 @@ namespace alpaka::tensor
         return false;
     }
 
+    inline bool NCCLProvider::supportsMode(NCCLProvider::ExecutionMode) const
+    {
+        return false;
+    }
+
+    inline NCCLProvider::ExecutionMode NCCLProvider::currentMode() const
+    {
+        return NCCLProvider::ExecutionMode::Undefined;
+    }
+
     inline bool NCCLProvider::supportsPattern(ops::CollectivePattern) const
     {
         return false;
@@ -477,6 +764,29 @@ namespace alpaka::tensor
     inline std::size_t NCCLProvider::worldRank() const
     {
         return 0;
+    }
+
+    inline OpStatus NCCLProvider::initializeMultiDevice(MultiDeviceGroup const&)
+    {
+        return OpStatus::Unsupported;
+    }
+
+    inline OpStatus NCCLProvider::initializeMultiProcess(MultiProcessBootstrap const&)
+    {
+        return OpStatus::Unsupported;
+    }
+
+    inline std::size_t NCCLProvider::localParticipantCount() const
+    {
+        return 1;
+    }
+
+    inline void NCCLProvider::setActiveParticipant(std::size_t)
+    {
+    }
+
+    inline void NCCLProvider::synchronizeParticipants()
+    {
     }
 
     inline NCCLProvider::Diagnostics NCCLProvider::diagnostics() const

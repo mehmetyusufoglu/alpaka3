@@ -6,11 +6,12 @@
 #include <alpaka/tensor/ops/CollectiveOps.hpp>
 #include <alpaka/tensor/providers/ICollectiveProvider.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-#ifdef ALPAKA_HAS_RCCL
+#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
 #    include <hip/hip_runtime_api.h>
 #    include <rccl/rccl.h>
 #endif
@@ -20,6 +21,10 @@ namespace alpaka::tensor
     class RCCLProvider : public ICollectiveProvider
     {
     public:
+        using ExecutionMode = ICollectiveProvider::ExecutionMode;
+        using MultiDeviceGroup = ICollectiveProvider::MultiDeviceGroup;
+        using MultiProcessBootstrap = ICollectiveProvider::MultiProcessBootstrap;
+
         struct Diagnostics
         {
             int deviceCount = 0;
@@ -35,6 +40,8 @@ namespace alpaka::tensor
         std::string getBackendName() const override;
         bool supportsOperation(OpType op) const override;
         bool isActive() const override;
+        bool supportsMode(ExecutionMode mode) const override;
+        ExecutionMode currentMode() const override;
 
         Diagnostics diagnostics() const;
 
@@ -44,6 +51,12 @@ namespace alpaka::tensor
 
         std::size_t worldSize() const override;
         std::size_t worldRank() const override;
+
+        OpStatus initializeMultiDevice(MultiDeviceGroup const& group) override;
+        OpStatus initializeMultiProcess(MultiProcessBootstrap const& bootstrap) override;
+        std::size_t localParticipantCount() const override;
+        void setActiveParticipant(std::size_t localRank) override;
+        void synchronizeParticipants() override;
 
     protected:
         OpStatus allreduce_impl(
@@ -68,26 +81,43 @@ namespace alpaka::tensor
     private:
         void ensureInitialized() const;
         void finalize() noexcept;
+        void finalizeMultiDevice() const;
+        void finalizeSingleDevice() const;
+        void finalizeMultiProcess() const;
+    OpStatus initializeSingleDevice() const;
+    std::size_t resolveLocalRank(CollectiveExecutionContext const& ctx) const;
+#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+    ncclComm_t resolveCommunicator(std::size_t localRank) const;
+#endif
+        void updateWorldTracking(std::size_t localRank) const;
+        void setDeviceForRank(std::size_t localRank) const;
 
-#ifdef ALPAKA_HAS_RCCL
-    ncclDataType_t mapDataType(ops::CollectiveDataType dtype) const;
-    ncclRedOp_t mapReduction(ops::CollectiveReduction reduction) const;
+#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+        ncclDataType_t mapDataType(ops::CollectiveDataType dtype) const;
+        ncclRedOp_t mapReduction(ops::CollectiveReduction reduction) const;
 #endif
 
     private:
-#ifdef ALPAKA_HAS_RCCL
-    mutable ncclComm_t comm_ = nullptr;
-        mutable bool initialized_ = false;
+#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
+        mutable RCCLProvider::ExecutionMode mode_ = RCCLProvider::ExecutionMode::Undefined;
+        mutable ncclComm_t singleDeviceComm_ = nullptr;
+        mutable bool singleDeviceInitialized_ = false;
+        mutable std::vector<ncclComm_t> multiDeviceComms_{};
+        mutable std::vector<int> multiDeviceDeviceIds_{};
+        mutable std::vector<void*> multiDeviceQueues_{};
+        mutable std::size_t activeParticipant_ = 0;
+        mutable ncclComm_t multiProcessComm_ = nullptr;
         mutable bool active_ = false;
         mutable int worldSize_ = 1;
         mutable int worldRank_ = 0;
+        mutable std::size_t localSize_ = 1;
 #else
         static constexpr bool active_ = false;
 #endif
     };
 } // namespace alpaka::tensor
 
-#ifdef ALPAKA_HAS_RCCL
+#if defined(ALPAKA_HAS_RCCL) && defined(ALPAKA_ACC_GPU_HIP_ENABLED)
 namespace alpaka::tensor
 {
     inline RCCLProvider::~RCCLProvider()
@@ -271,42 +301,286 @@ namespace alpaka::tensor
 
     inline void RCCLProvider::ensureInitialized() const
     {
-        if(initialized_)
+    if(mode_ != RCCLProvider::ExecutionMode::Undefined || singleDeviceInitialized_)
             return;
+
+        initializeSingleDevice();
+    }
+
+    inline void RCCLProvider::finalize() noexcept
+    {
+        finalizeSingleDevice();
+        finalizeMultiDevice();
+        finalizeMultiProcess();
+
+    mode_ = RCCLProvider::ExecutionMode::Undefined;
+        active_ = false;
+        worldSize_ = 1;
+        worldRank_ = 0;
+        localSize_ = 1;
+        activeParticipant_ = 0;
+    }
+
+    inline void RCCLProvider::finalizeSingleDevice() const
+    {
+        if(singleDeviceComm_ != nullptr)
+        {
+            ncclCommDestroy(singleDeviceComm_);
+            singleDeviceComm_ = nullptr;
+        }
+        singleDeviceInitialized_ = false;
+    }
+
+    inline void RCCLProvider::finalizeMultiDevice() const
+    {
+        if(!multiDeviceComms_.empty())
+        {
+            for(ncclComm_t comm : multiDeviceComms_)
+            {
+                if(comm != nullptr)
+                {
+                    ncclCommDestroy(comm);
+                }
+            }
+        }
+        multiDeviceComms_.clear();
+        multiDeviceDeviceIds_.clear();
+        multiDeviceQueues_.clear();
+    }
+
+    inline void RCCLProvider::finalizeMultiProcess() const
+    {
+        if(multiProcessComm_ != nullptr)
+        {
+            ncclCommDestroy(multiProcessComm_);
+            multiProcessComm_ = nullptr;
+        }
+    }
+
+    inline OpStatus RCCLProvider::initializeSingleDevice() const
+    {
+        if(singleDeviceInitialized_ && singleDeviceComm_ != nullptr)
+        {
+            mode_ = RCCLProvider::ExecutionMode::SingleProcessSingleDevice;
+            active_ = true;
+            worldSize_ = 1;
+            worldRank_ = 0;
+            localSize_ = 1;
+            return OpStatus::Success;
+        }
 
         int deviceId = 0;
         hipError_t hipStatus = hipGetDevice(&deviceId);
         if(hipStatus != hipSuccess)
         {
-            initialized_ = true;
+            singleDeviceInitialized_ = true;
             active_ = false;
-            return;
+            return OpStatus::Unsupported;
         }
 
-        ncclResult_t ncclStatus = ncclCommInitAll(&comm_, 1, &deviceId);
-        if(ncclStatus != ncclSuccess)
+        ncclResult_t status = ncclCommInitAll(&singleDeviceComm_, 1, &deviceId);
+        if(status != ncclSuccess)
         {
-            initialized_ = true;
+            singleDeviceComm_ = nullptr;
+            singleDeviceInitialized_ = true;
             active_ = false;
-            comm_ = nullptr;
-            return;
+            return OpStatus::Error;
         }
 
+    singleDeviceInitialized_ = true;
+    mode_ = RCCLProvider::ExecutionMode::SingleProcessSingleDevice;
+        active_ = true;
         worldSize_ = 1;
         worldRank_ = 0;
-        active_ = true;
-        initialized_ = true;
+        localSize_ = 1;
+        activeParticipant_ = 0;
+        return OpStatus::Success;
     }
 
-    inline void RCCLProvider::finalize() noexcept
+    inline bool RCCLProvider::supportsMode(RCCLProvider::ExecutionMode mode) const
     {
-        if(comm_ != nullptr)
+        switch(mode)
         {
-            ncclCommDestroy(comm_);
-            comm_ = nullptr;
+        case RCCLProvider::ExecutionMode::Undefined:
+        case RCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+        case RCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+        case RCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+            return true;
+        default:
+            return false;
         }
-        initialized_ = false;
-        active_ = false;
+    }
+
+    inline RCCLProvider::ExecutionMode RCCLProvider::currentMode() const
+    {
+        return mode_;
+    }
+
+    inline OpStatus RCCLProvider::initializeMultiDevice(MultiDeviceGroup const& group)
+    {
+        if(group.participants.empty())
+            return OpStatus::Unsupported;
+
+        finalize();
+
+        std::size_t count = group.participants.size();
+        multiDeviceComms_.resize(count, nullptr);
+        multiDeviceDeviceIds_.resize(count);
+        multiDeviceQueues_.resize(count, nullptr);
+
+        for(std::size_t i = 0; i < count; ++i)
+        {
+            auto const& participant = group.participants[i];
+            multiDeviceDeviceIds_[i] = static_cast<int>(participant.localRank);
+            multiDeviceQueues_[i] = participant.queue;
+        }
+
+        ncclResult_t status = ncclCommInitAll(
+            multiDeviceComms_.data(),
+            static_cast<int>(count),
+            multiDeviceDeviceIds_.data());
+        if(status != ncclSuccess)
+        {
+            finalize();
+            return OpStatus::Error;
+        }
+
+    mode_ = RCCLProvider::ExecutionMode::SingleProcessMultiDevice;
+        active_ = true;
+        worldSize_ = static_cast<int>(count);
+        worldRank_ = 0;
+        localSize_ = count;
+        activeParticipant_ = 0;
+        setDeviceForRank(activeParticipant_);
+        return OpStatus::Success;
+    }
+
+    inline OpStatus RCCLProvider::initializeMultiProcess(MultiProcessBootstrap const& bootstrap)
+    {
+        if(bootstrap.uniqueId == nullptr || bootstrap.uniqueIdSize != sizeof(ncclUniqueId))
+        {
+            return OpStatus::Unsupported;
+        }
+
+        finalize();
+
+        auto const* id = static_cast<ncclUniqueId const*>(bootstrap.uniqueId);
+        ncclComm_t comm = nullptr;
+        ncclResult_t status = ncclCommInitRank(
+            &comm,
+            static_cast<int>(bootstrap.worldSize),
+            *id,
+            static_cast<int>(bootstrap.worldRank));
+        if(status != ncclSuccess)
+        {
+            finalize();
+            return OpStatus::Error;
+        }
+
+        multiProcessComm_ = comm;
+    mode_ = RCCLProvider::ExecutionMode::MultiProcessSingleDevice;
+        active_ = true;
+        worldSize_ = static_cast<int>(bootstrap.worldSize);
+        worldRank_ = static_cast<int>(bootstrap.worldRank);
+        localSize_ = bootstrap.localSize;
+        activeParticipant_ = bootstrap.localRank;
+        return OpStatus::Success;
+    }
+
+    inline std::size_t RCCLProvider::localParticipantCount() const
+    {
+        return localSize_;
+    }
+
+    inline void RCCLProvider::setActiveParticipant(std::size_t localRank)
+    {
+        activeParticipant_ = localRank;
+        updateWorldTracking(localRank);
+        setDeviceForRank(localRank);
+    }
+
+    inline void RCCLProvider::synchronizeParticipants()
+    {
+        switch(mode_)
+        {
+        case RCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+        {
+            for(std::size_t i = 0; i < multiDeviceDeviceIds_.size(); ++i)
+            {
+                setDeviceForRank(i);
+                hipDeviceSynchronize();
+            }
+            break;
+        }
+        case RCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+        case RCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+        default:
+            hipDeviceSynchronize();
+            break;
+        }
+    }
+
+    inline std::size_t RCCLProvider::resolveLocalRank(CollectiveExecutionContext const& ctx) const
+    {
+        if(mode_ == RCCLProvider::ExecutionMode::SingleProcessMultiDevice && ctx.queue != nullptr)
+        {
+            for(std::size_t i = 0; i < multiDeviceQueues_.size(); ++i)
+            {
+                if(multiDeviceQueues_[i] == ctx.queue)
+                    return i;
+            }
+        }
+
+        if(ctx.localRank < multiDeviceComms_.size())
+            return ctx.localRank;
+
+        return activeParticipant_;
+    }
+
+    inline ncclComm_t RCCLProvider::resolveCommunicator(std::size_t localRank) const
+    {
+        switch(mode_)
+        {
+        case RCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+            return singleDeviceComm_;
+        case RCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+            return (localRank < multiDeviceComms_.size()) ? multiDeviceComms_[localRank] : nullptr;
+        case RCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+            return multiProcessComm_;
+        default:
+            return nullptr;
+        }
+    }
+
+    inline void RCCLProvider::updateWorldTracking(std::size_t localRank) const
+    {
+        switch(mode_)
+        {
+        case RCCLProvider::ExecutionMode::SingleProcessMultiDevice:
+            worldSize_ = static_cast<int>(multiDeviceComms_.size());
+            worldRank_ = static_cast<int>(localRank);
+            break;
+        case RCCLProvider::ExecutionMode::SingleProcessSingleDevice:
+            worldSize_ = 1;
+            worldRank_ = 0;
+            break;
+        case RCCLProvider::ExecutionMode::MultiProcessSingleDevice:
+            break;
+        default:
+            break;
+        }
+    }
+
+    inline void RCCLProvider::setDeviceForRank(std::size_t localRank) const
+    {
+        if(mode_ != RCCLProvider::ExecutionMode::SingleProcessMultiDevice)
+            return;
+
+        if(localRank >= multiDeviceDeviceIds_.size())
+            return;
+
+        int deviceId = multiDeviceDeviceIds_[localRank];
+        hipSetDevice(deviceId);
     }
 
     inline OpStatus RCCLProvider::allreduce_impl(
@@ -322,6 +596,13 @@ namespace alpaka::tensor
         if(!active_)
             return OpStatus::Unsupported;
 
+        std::size_t localRank = resolveLocalRank(ctx);
+        setDeviceForRank(localRank);
+
+        ncclComm_t communicator = resolveCommunicator(localRank);
+        if(communicator == nullptr)
+            return OpStatus::Unsupported;
+
         hipStream_t hipStream = ctx.nativeQueue ? static_cast<hipStream_t>(ctx.nativeQueue) : nullptr;
         ncclResult_t status = ncclAllReduce(
             sendBuffer,
@@ -329,7 +610,7 @@ namespace alpaka::tensor
             elementCount,
             mapDataType(dtype),
             mapReduction(reduction),
-            comm_,
+            communicator,
             hipStream);
         if(status != ncclSuccess)
             return OpStatus::Error;
@@ -364,6 +645,13 @@ namespace alpaka::tensor
         if(!active_)
             return OpStatus::Unsupported;
 
+        std::size_t localRank = resolveLocalRank(ctx);
+        setDeviceForRank(localRank);
+
+        ncclComm_t communicator = resolveCommunicator(localRank);
+        if(communicator == nullptr)
+            return OpStatus::Unsupported;
+
         hipStream_t hipStream = ctx.nativeQueue ? static_cast<hipStream_t>(ctx.nativeQueue) : nullptr;
         ncclResult_t status = ncclBroadcast(
             static_cast<void const*>(buffer),
@@ -371,7 +659,7 @@ namespace alpaka::tensor
             elementCount,
             mapDataType(dtype),
             static_cast<int>(rootRank),
-            comm_,
+            communicator,
             hipStream);
         if(status != ncclSuccess)
             return OpStatus::Error;
@@ -398,6 +686,13 @@ namespace alpaka::tensor
     {
         ensureInitialized();
         if(!active_)
+            return OpStatus::Unsupported;
+
+        std::size_t localRank = resolveLocalRank(ctx);
+        setDeviceForRank(localRank);
+
+        ncclComm_t communicator = resolveCommunicator(localRank);
+        if(communicator == nullptr)
             return OpStatus::Unsupported;
 
         hipStream_t hipStream = ctx.nativeQueue ? static_cast<hipStream_t>(ctx.nativeQueue) : nullptr;
@@ -436,6 +731,16 @@ namespace alpaka::tensor
         return false;
     }
 
+    inline bool RCCLProvider::supportsMode(RCCLProvider::ExecutionMode) const
+    {
+        return false;
+    }
+
+    inline RCCLProvider::ExecutionMode RCCLProvider::currentMode() const
+    {
+        return RCCLProvider::ExecutionMode::Undefined;
+    }
+
     inline bool RCCLProvider::supportsPattern(ops::CollectivePattern) const
     {
         return false;
@@ -459,6 +764,29 @@ namespace alpaka::tensor
     inline std::size_t RCCLProvider::worldRank() const
     {
         return 0;
+    }
+
+    inline OpStatus RCCLProvider::initializeMultiDevice(MultiDeviceGroup const&)
+    {
+        return OpStatus::Unsupported;
+    }
+
+    inline OpStatus RCCLProvider::initializeMultiProcess(MultiProcessBootstrap const&)
+    {
+        return OpStatus::Unsupported;
+    }
+
+    inline std::size_t RCCLProvider::localParticipantCount() const
+    {
+        return 1;
+    }
+
+    inline void RCCLProvider::setActiveParticipant(std::size_t)
+    {
+    }
+
+    inline void RCCLProvider::synchronizeParticipants()
+    {
     }
 
     inline RCCLProvider::Diagnostics RCCLProvider::diagnostics() const

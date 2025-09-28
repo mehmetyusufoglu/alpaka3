@@ -31,6 +31,7 @@ namespace alpaka::tensor::providers
         bool activation = false;
         bool pooling = false;
         bool collective = false;
+        bool collectiveMultiDevice = false;
     };
 
     template<typename Provider>
@@ -78,7 +79,8 @@ namespace alpaka::tensor::providers
     [[nodiscard]] constexpr bool provides_any() noexcept
     {
         auto f = caps<Provider>();
-        return f.gemm || f.conv2d || f.batchNorm || f.activation || f.pooling || f.collective;
+        return f.gemm || f.conv2d || f.batchNorm || f.activation || f.pooling || f.collective
+            || f.collectiveMultiDevice;
     }
 
     // ------------------------------------------------------------------
@@ -157,9 +159,11 @@ namespace alpaka::tensor::providers
     {
         static constexpr CapabilityFlags value{
 #ifdef ALPAKA_HAS_RCCL
-            .collective = true
+        .collective = true,
+        .collectiveMultiDevice = true
 #else
-            .collective = false
+        .collective = false,
+        .collectiveMultiDevice = false
 #endif
         };
     };
@@ -169,9 +173,11 @@ namespace alpaka::tensor::providers
     {
         static constexpr CapabilityFlags value{
 #ifdef ALPAKA_HAS_NCCL
-            .collective = true
+        .collective = true,
+        .collectiveMultiDevice = true
 #else
-            .collective = false
+        .collective = false,
+        .collectiveMultiDevice = false
 #endif
         };
     };
