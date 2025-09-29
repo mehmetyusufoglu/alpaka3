@@ -645,7 +645,20 @@ namespace alpaka::tensor
         multiDeviceDeviceIds_.assign(count, -1);
         multiDeviceQueues_.assign(count, nullptr);
         multiDeviceStreams_.assign(count, nullptr);
-        groupFallbackThreadsEnabled_ = false;
+        groupFallbackThreadsEnabled_ = true;
+
+        if(char const* enableGroups = std::getenv("ALPAKA_NCCL_ENABLE_GROUPS"))
+        {
+            if(std::atoi(enableGroups) != 0)
+            {
+                std::cout << "[NCCL-DEBUG] Enabling NCCL group path via ALPAKA_NCCL_ENABLE_GROUPS" << std::endl;
+                groupFallbackThreadsEnabled_ = false;
+            }
+            else
+            {
+                std::cout << "[NCCL-DEBUG] Disabling NCCL group path via ALPAKA_NCCL_ENABLE_GROUPS=0" << std::endl;
+            }
+        }
 
         if(char const* forceFallback = std::getenv("ALPAKA_NCCL_FORCE_FALLBACK"))
         {
@@ -653,18 +666,6 @@ namespace alpaka::tensor
             {
                 std::cout << "[NCCL-DEBUG] Forcing thread fallback path via ALPAKA_NCCL_FORCE_FALLBACK" << std::endl;
                 groupFallbackThreadsEnabled_ = true;
-            }
-        }
-        else if(char const* enableGroups = std::getenv("ALPAKA_NCCL_ENABLE_GROUPS"))
-        {
-            if(std::atoi(enableGroups) == 0)
-            {
-                std::cout << "[NCCL-DEBUG] Disabling NCCL group path via ALPAKA_NCCL_ENABLE_GROUPS=0" << std::endl;
-                groupFallbackThreadsEnabled_ = true;
-            }
-            else
-            {
-                std::cout << "[NCCL-DEBUG] Enabling NCCL group path via ALPAKA_NCCL_ENABLE_GROUPS" << std::endl;
             }
         }
 
@@ -889,56 +890,43 @@ namespace alpaka::tensor
         OpStatus aggregateStatus = OpStatus::Success;
 
         // Fallback path for providers that are not in multi-device mode.
-        if(!isMultiDevice)
+        if(!multiDeviceComms_.empty())
         {
-            for(auto const& op : operations)
+            for(std::size_t idx = 0; idx < multiDeviceComms_.size(); ++idx)
             {
-                if(op.context == nullptr)
-                {
-                    aggregateStatus = OpStatus::Unsupported;
+                ncclComm_t comm = multiDeviceComms_[idx];
+                if(comm == nullptr)
                     continue;
+
+                int deviceId = (idx < multiDeviceDeviceIds_.size()) ? multiDeviceDeviceIds_[idx] : -1;
+                if(deviceId >= 0)
+                {
+                    cudaError_t const setStatus = cudaSetDevice(deviceId);
+                    if(setStatus != cudaSuccess)
+                    {
+                        reportCudaError("cudaSetDevice", setStatus, __FILE__, __LINE__);
+                    }
                 }
 
-                OpStatus const status = allreduce_impl(
-                    *op.context,
-                    op.sendBuffer,
-                    op.recvBuffer,
-                    op.elementCount,
-                    op.dtype,
-                    op.reduction,
-                    op.async);
-
-                if(status == OpStatus::Error)
+                cudaError_t const syncStatus = cudaDeviceSynchronize();
+                if(syncStatus != cudaSuccess)
                 {
-                    return OpStatus::Error;
+                    reportCudaError("cudaDeviceSynchronize", syncStatus, __FILE__, __LINE__);
                 }
-                if(status == OpStatus::Unsupported)
+
+                ncclResult_t const abortStatus = ncclCommAbort(comm);
+                if(abortStatus != ncclSuccess && abortStatus != ncclInvalidUsage)
                 {
-                    aggregateStatus = OpStatus::Unsupported;
+                    reportNcclError("ncclCommAbort", abortStatus, __FILE__, __LINE__);
+                }
+
+                ncclResult_t const destroyStatus = ncclCommDestroy(comm);
+                if(destroyStatus != ncclSuccess)
+                {
+                    reportNcclError("ncclCommDestroy", destroyStatus, __FILE__, __LINE__);
                 }
             }
-
-            if(synchronizeAfter && aggregateStatus == OpStatus::Success)
-            {
-                synchronizeParticipants();
-            }
-            return aggregateStatus;
         }
-
-        std::size_t const expectedRanks = multiDeviceComms_.size();
-        std::vector<cudaStream_t> streams(operations.size(), nullptr);
-        std::vector<ncclResult_t> ncclStatuses(operations.size(), ncclSuccess);
-        std::vector<OpStatus> opStatuses(operations.size(), OpStatus::Success);
-
-        auto validateOperation = [&](std::size_t index) {
-            auto const& op = operations[index];
-            if(op.context == nullptr || op.localRank >= expectedRanks)
-            {
-                std::cout << "[NCCL-DEBUG] Operation validation failed for index " << index
-                          << " (context=" << (op.context != nullptr) << ", localRank=" << op.localRank
-                          << ", expectedRanks=" << expectedRanks << ")" << std::endl;
-                opStatuses[index] = OpStatus::Unsupported;
-                ncclStatuses[index] = ncclSystemError;
                 return false;
             }
             return true;
