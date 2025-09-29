@@ -208,7 +208,42 @@ namespace
             ctx.globalSize = participants.size();
             ctx.localRank = participant.rank;
             ctx.localSize = participants.size();
-            ctx.deviceId = static_cast<int>(participant.rank);
+
+            if constexpr(requires { alpaka::onHost::getNativeHandle(participant.device); })
+            {
+                auto nativeDevice = alpaka::onHost::getNativeHandle(participant.device);
+                if constexpr(std::is_pointer_v<decltype(nativeDevice)>)
+                {
+                    ctx.nativeDevice = const_cast<void*>(reinterpret_cast<void const*>(nativeDevice));
+                }
+                else
+                {
+                    ctx.nativeDevice = reinterpret_cast<void*>(static_cast<uintptr_t>(nativeDevice));
+                }
+
+                if constexpr(std::is_integral_v<decltype(nativeDevice)>)
+                {
+                    ctx.deviceId = static_cast<int>(nativeDevice);
+                }
+            }
+
+            if(ctx.deviceId < 0)
+            {
+                ctx.deviceId = static_cast<int>(participant.rank);
+            }
+
+            if constexpr(requires { alpaka::onHost::getNativeHandle(participant.queue); })
+            {
+                auto nativeQueue = alpaka::onHost::getNativeHandle(participant.queue);
+                if constexpr(std::is_pointer_v<decltype(nativeQueue)>)
+                {
+                    ctx.nativeQueue = const_cast<void*>(reinterpret_cast<void const*>(nativeQueue));
+                }
+                else
+                {
+                    ctx.nativeQueue = reinterpret_cast<void*>(static_cast<uintptr_t>(nativeQueue));
+                }
+            }
             group.participants.emplace_back(ctx);
         }
 
