@@ -7,8 +7,10 @@
 #include <alpaka/tensor/providers/ICollectiveProvider.hpp>
 
 #include <algorithm>
+#include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifndef ALPAKA_TENSOR_USE_NCCL
@@ -73,7 +75,29 @@ namespace alpaka::tensor
         std::size_t localParticipantCount() const override;
         void setActiveParticipant(std::size_t localRank) override;
         void synchronizeParticipants() override;
-
+        
+        /**
+         * @brief Perform batched all-reduce operations across multiple NCCL communicators.
+         *
+         * This implementation handles multi-device all-reduce operations efficiently by:
+         * 1. First attempting to use NCCL group semantics (ncclGroupStart/ncclGroupEnd)
+         *    to batch operations for optimal performance
+         * 2. Falling back to threaded execution if group operations fail
+         * 3. Properly handling device context switching and stream management
+         * 4. Providing comprehensive error reporting and status aggregation
+         *
+         * The method ensures that all NCCL operations are launched concurrently,
+         * which is required to avoid deadlocks in collective communication.
+         *
+         * @param operations Vector of all-reduce operations to execute concurrently
+         * @param synchronizeAfter Whether to synchronize all participants after completion
+         * @return OpStatus::Success if all operations succeeded, Error if any failed, 
+         *         Unsupported if provider is not in multi-device mode
+         */
+        OpStatus allReduceMultiDevice(
+            std::vector<ICollectiveProvider::MultiDeviceAllReduceOp> const& operations,
+            bool synchronizeAfter) override;
+        
     protected:
         OpStatus allreduce_impl(
             CollectiveExecutionContext const& ctx,
@@ -104,6 +128,48 @@ namespace alpaka::tensor
     std::size_t resolveLocalRank(CollectiveExecutionContext const& ctx) const;
 #if ALPAKA_TENSOR_USE_NCCL
     ncclComm_t resolveCommunicator(std::size_t localRank) const;
+        int resolveDeviceId(CollectiveExecutionContext const& participant, std::size_t fallbackIndex) const;
+        static void reportCudaError(char const* expr, cudaError_t status, char const* file, int line);
+        static void reportNcclError(char const* expr, ncclResult_t status, char const* file, int line);
+        
+        /**
+         * @brief Enqueue an NCCL all-reduce operation for a specific rank.
+         *
+         * This helper method handles device context setup, stream selection,
+         * and NCCL communicator resolution for a single all-reduce operation.
+         * It's designed to be called either within NCCL groups or from worker threads.
+         *
+         * @param localRank The rank/device index for this operation
+         * @param ctx Execution context containing device and queue information
+         * @param sendBuffer Input data buffer
+         * @param recvBuffer Output data buffer
+         * @param elementCount Number of elements to reduce
+         * @param dtype Data type of the elements
+         * @param reduction Type of reduction operation
+         * @param outStream Returns the CUDA stream used for the operation
+         * @return ncclResult_t indicating the NCCL operation status
+         */
+        ncclResult_t enqueueAllReduce(
+            std::size_t localRank,
+            CollectiveExecutionContext const& ctx,
+            void const* sendBuffer,
+            void* recvBuffer,
+            std::size_t elementCount,
+            ops::CollectiveDataType dtype,
+            ops::CollectiveReduction reduction,
+            cudaStream_t& outStream) const;
+            
+        /**
+         * @brief Synchronize a CUDA stream for a specific rank.
+         *
+         * This method ensures proper device context and synchronizes the given stream.
+         * It's used to wait for NCCL operations to complete.
+         *
+         * @param localRank The rank/device index
+         * @param stream The CUDA stream to synchronize
+         * @return OpStatus indicating success or failure
+         */
+        OpStatus synchronizeRankStream(std::size_t localRank, cudaStream_t stream) const;
 #endif
     void updateWorldTracking(std::size_t localRank) const;
     void setCudaDeviceForRank(std::size_t localRank) const;
@@ -119,14 +185,16 @@ namespace alpaka::tensor
         mutable ncclComm_t singleDeviceComm_ = nullptr;
         mutable bool singleDeviceInitialized_ = false;
         mutable std::vector<ncclComm_t> multiDeviceComms_{};
-        mutable std::vector<int> multiDeviceDeviceIds_{};
-        mutable std::vector<void*> multiDeviceQueues_{};
+    mutable std::vector<int> multiDeviceDeviceIds_{};
+    mutable std::vector<void*> multiDeviceQueues_{};
+    mutable std::vector<cudaStream_t> multiDeviceStreams_{};
         mutable std::size_t activeParticipant_ = 0;
         mutable ncclComm_t multiProcessComm_ = nullptr;
         mutable bool active_ = false;
         mutable int worldSize_ = 1;
         mutable int worldRank_ = 0;
         mutable std::size_t localSize_ = 1;
+        mutable bool groupFallbackThreadsEnabled_ = false;
 #else
         static constexpr bool active_ = false;
 #endif
@@ -315,6 +383,69 @@ namespace alpaka::tensor
         }
     }
 
+    inline ncclResult_t NCCLProvider::enqueueAllReduce(
+        std::size_t localRank,
+        CollectiveExecutionContext const& ctx,
+        void const* sendBuffer,
+        void* recvBuffer,
+        std::size_t elementCount,
+        ops::CollectiveDataType dtype,
+        ops::CollectiveReduction reduction,
+        cudaStream_t& outStream) const
+    {
+        if(localRank < multiDeviceQueues_.size())
+        {
+            multiDeviceQueues_[localRank] = ctx.queue;
+        }
+
+        setCudaDeviceForRank(localRank);
+
+        ncclComm_t communicator = resolveCommunicator(localRank);
+        if(communicator == nullptr)
+        {
+            outStream = nullptr;
+            return ncclSystemError;
+        }
+
+        cudaStream_t cudaStream = nullptr;
+        if(mode_ == NCCLProvider::ExecutionMode::SingleProcessMultiDevice && localRank < multiDeviceStreams_.size())
+        {
+            cudaStream = multiDeviceStreams_[localRank];
+        }
+        if(cudaStream == nullptr && ctx.nativeQueue != nullptr)
+        {
+            cudaStream = static_cast<cudaStream_t>(ctx.nativeQueue);
+        }
+
+        outStream = cudaStream;
+
+        return ncclAllReduce(
+            sendBuffer,
+            recvBuffer,
+            elementCount,
+            mapDataType(dtype),
+            mapReduction(reduction),
+            communicator,
+            cudaStream);
+    }
+
+    inline OpStatus NCCLProvider::synchronizeRankStream(std::size_t localRank, cudaStream_t stream) const
+    {
+        setCudaDeviceForRank(localRank);
+
+        cudaError_t const cudaStatus = (stream != nullptr) ? cudaStreamSynchronize(stream) : cudaDeviceSynchronize();
+        if(cudaStatus != cudaSuccess)
+        {
+            reportCudaError(
+                stream != nullptr ? "cudaStreamSynchronize" : "cudaDeviceSynchronize",
+                cudaStatus,
+                __FILE__,
+                __LINE__);
+            return OpStatus::Error;
+        }
+        return OpStatus::Success;
+    }
+
     inline void NCCLProvider::ensureInitialized() const
     {
     if(mode_ != NCCLProvider::ExecutionMode::Undefined || singleDeviceInitialized_)
@@ -351,6 +482,10 @@ namespace alpaka::tensor
     {
         if(!multiDeviceComms_.empty())
         {
+            std::cout << "[NCCL-DEBUG] finalizeMultiDevice: destroying NCCL communicators" << std::endl;
+        }
+        if(!multiDeviceComms_.empty())
+        {
             for(ncclComm_t comm : multiDeviceComms_)
             {
                 if(comm != nullptr)
@@ -359,9 +494,21 @@ namespace alpaka::tensor
                 }
             }
         }
+        if(!multiDeviceStreams_.empty())
+        {
+            std::cout << "[NCCL-DEBUG] finalizeMultiDevice: destroying CUDA streams" << std::endl;
+            for(cudaStream_t stream : multiDeviceStreams_)
+            {
+                if(stream != nullptr)
+                {
+                    cudaStreamDestroy(stream);
+                }
+            }
+        }
         multiDeviceComms_.clear();
         multiDeviceDeviceIds_.clear();
         multiDeviceQueues_.clear();
+        multiDeviceStreams_.clear();
     }
 
     inline void NCCLProvider::finalizeMultiProcess() const
@@ -389,6 +536,7 @@ namespace alpaka::tensor
         cudaError_t cudaStatus = cudaGetDevice(&deviceId);
         if(cudaStatus != cudaSuccess)
         {
+            reportCudaError("cudaGetDevice", cudaStatus, __FILE__, __LINE__);
             singleDeviceInitialized_ = true;
             active_ = false;
             return OpStatus::Unsupported;
@@ -397,6 +545,7 @@ namespace alpaka::tensor
         ncclResult_t status = ncclCommInitAll(&singleDeviceComm_, 1, &deviceId);
         if(status != ncclSuccess)
         {
+            reportNcclError("ncclCommInitAll", status, __FILE__, __LINE__);
             singleDeviceComm_ = nullptr;
             singleDeviceInitialized_ = true;
             active_ = false;
@@ -434,40 +583,113 @@ namespace alpaka::tensor
 
     inline OpStatus NCCLProvider::initializeMultiDevice(MultiDeviceGroup const& group)
     {
+        std::cout << "[NCCL-DEBUG] initializeMultiDevice called with " 
+                  << group.participants.size() << " participants" << std::endl;
+        
         if(group.participants.empty())
+        {
+            std::cout << "[NCCL-DEBUG] No participants, returning Unsupported" << std::endl;
             return OpStatus::Unsupported;
+        }
 
+        std::cout << "[NCCL-DEBUG] Calling finalize()..." << std::endl;
         finalize();
+        std::cout << "[NCCL-DEBUG] finalize() completed" << std::endl;
 
-        std::size_t count = group.participants.size();
-        multiDeviceComms_.resize(count, nullptr);
-        multiDeviceDeviceIds_.resize(count);
-        multiDeviceQueues_.resize(count, nullptr);
+        std::size_t const count = group.participants.size();
+        std::cout << "[NCCL-DEBUG] Setting up data structures for " << count << " devices" << std::endl;
+        
+        multiDeviceComms_.assign(count, nullptr);
+        multiDeviceDeviceIds_.assign(count, 0);
+        multiDeviceQueues_.assign(count, nullptr);
+        multiDeviceStreams_.assign(count, nullptr);
+    groupFallbackThreadsEnabled_ = false;
 
+        std::cout << "[NCCL-DEBUG] Step 1: Extracting device IDs and setting up CUDA contexts..." << std::endl;
         for(std::size_t i = 0; i < count; ++i)
         {
             auto const& participant = group.participants[i];
-            multiDeviceDeviceIds_[i] = static_cast<int>(participant.localRank);
+            int const deviceId = resolveDeviceId(participant, i);
+            std::cout << "[NCCL-DEBUG]   Participant " << i << ": deviceId=" << deviceId 
+                      << ", localRank=" << participant.localRank << std::endl;
+            
+            if(deviceId < 0)
+            {
+                std::cout << "[NCCL-DEBUG] Invalid device ID, returning Unsupported" << std::endl;
+                finalize();
+                return OpStatus::Unsupported;
+            }
+
+            multiDeviceDeviceIds_[i] = deviceId;
             multiDeviceQueues_[i] = participant.queue;
+
+            cudaError_t const setStatus = cudaSetDevice(deviceId);
+            if(setStatus != cudaSuccess)
+            {
+                reportCudaError("cudaSetDevice", setStatus, __FILE__, __LINE__);
+                finalize();
+                return OpStatus::Error;
+            }
+
+            cudaError_t const warmupStatus = cudaFree(nullptr);
+            if(warmupStatus != cudaSuccess && warmupStatus != cudaErrorInvalidValue)
+            {
+                reportCudaError("cudaFree(nullptr)", warmupStatus, __FILE__, __LINE__);
+                finalize();
+                return OpStatus::Error;
+            }
         }
 
-        ncclResult_t status = ncclCommInitAll(
+        std::cout << "[NCCL-DEBUG] Step 2: Calling ncclCommInitAll with device IDs: ";
+        for(std::size_t i = 0; i < count; ++i) {
+            std::cout << multiDeviceDeviceIds_[i] << " ";
+        }
+        std::cout << std::endl;
+        
+        ncclResult_t const initStatus = ncclCommInitAll(
             multiDeviceComms_.data(),
             static_cast<int>(count),
             multiDeviceDeviceIds_.data());
-        if(status != ncclSuccess)
+            
+        std::cout << "[NCCL-DEBUG] ncclCommInitAll returned: " << ncclGetErrorString(initStatus) << std::endl;
+        
+        if(initStatus != ncclSuccess)
         {
+            reportNcclError("ncclCommInitAll", initStatus, __FILE__, __LINE__);
             finalize();
             return OpStatus::Error;
         }
 
-    mode_ = NCCLProvider::ExecutionMode::SingleProcessMultiDevice;
+        std::cout << "[NCCL-DEBUG] Step 3: Creating CUDA streams for each device..." << std::endl;
+        for(std::size_t i = 0; i < count; ++i)
+        {
+            std::cout << "[NCCL-DEBUG]   Creating stream for device " << multiDeviceDeviceIds_[i] << std::endl;
+            cudaError_t const setStatus = cudaSetDevice(multiDeviceDeviceIds_[i]);
+            if(setStatus != cudaSuccess)
+            {
+                reportCudaError("cudaSetDevice", setStatus, __FILE__, __LINE__);
+                finalize();
+                return OpStatus::Error;
+            }
+
+            cudaError_t const streamStatus = cudaStreamCreateWithFlags(&multiDeviceStreams_[i], cudaStreamNonBlocking);
+            if(streamStatus != cudaSuccess)
+            {
+                reportCudaError("cudaStreamCreateWithFlags", streamStatus, __FILE__, __LINE__);
+                finalize();
+                return OpStatus::Error;
+            }
+        }
+
+        mode_ = NCCLProvider::ExecutionMode::SingleProcessMultiDevice;
         active_ = true;
         worldSize_ = static_cast<int>(count);
         worldRank_ = 0;
         localSize_ = count;
         activeParticipant_ = 0;
         setCudaDeviceForRank(activeParticipant_);
+        
+        std::cout << "[NCCL-DEBUG] Multi-device initialization completed successfully!" << std::endl;
         return OpStatus::Success;
     }
 
@@ -489,6 +711,7 @@ namespace alpaka::tensor
             static_cast<int>(bootstrap.worldRank));
         if(status != ncclSuccess)
         {
+            reportNcclError("ncclCommInitRank", status, __FILE__, __LINE__);
             finalize();
             return OpStatus::Error;
         }
@@ -524,26 +747,316 @@ namespace alpaka::tensor
             for(std::size_t i = 0; i < multiDeviceDeviceIds_.size(); ++i)
             {
                 setCudaDeviceForRank(i);
-                cudaDeviceSynchronize();
+                cudaError_t const status = cudaDeviceSynchronize();
+                if(status != cudaSuccess)
+                    reportCudaError("cudaDeviceSynchronize", status, __FILE__, __LINE__);
             }
             break;
         }
     case NCCLProvider::ExecutionMode::SingleProcessSingleDevice:
     case NCCLProvider::ExecutionMode::MultiProcessSingleDevice:
         default:
-            cudaDeviceSynchronize();
+        {
+                cudaError_t const status = cudaDeviceSynchronize();
+                if(status != cudaSuccess)
+                    reportCudaError("cudaDeviceSynchronize", status, __FILE__, __LINE__);
             break;
         }
+        }
+    }
+
+    inline OpStatus NCCLProvider::allReduceMultiDevice(
+        std::vector<ICollectiveProvider::MultiDeviceAllReduceOp> const& operations,
+        bool synchronizeAfter)
+    {
+        ensureInitialized();
+        if(operations.empty())
+        {
+            if(synchronizeAfter)
+            {
+                synchronizeParticipants();
+            }
+            return OpStatus::Success;
+        }
+
+        if(!active_)
+        {
+            return OpStatus::Unsupported;
+        }
+
+        bool const isMultiDevice = mode_ == NCCLProvider::ExecutionMode::SingleProcessMultiDevice;
+        OpStatus aggregateStatus = OpStatus::Success;
+
+        // Fallback path for providers that are not in multi-device mode.
+        if(!isMultiDevice)
+        {
+            for(auto const& op : operations)
+            {
+                if(op.context == nullptr)
+                {
+                    aggregateStatus = OpStatus::Unsupported;
+                    continue;
+                }
+
+                OpStatus const status = allreduce_impl(
+                    *op.context,
+                    op.sendBuffer,
+                    op.recvBuffer,
+                    op.elementCount,
+                    op.dtype,
+                    op.reduction,
+                    op.async);
+
+                if(status == OpStatus::Error)
+                {
+                    return OpStatus::Error;
+                }
+                if(status == OpStatus::Unsupported)
+                {
+                    aggregateStatus = OpStatus::Unsupported;
+                }
+            }
+
+            if(synchronizeAfter && aggregateStatus == OpStatus::Success)
+            {
+                synchronizeParticipants();
+            }
+            return aggregateStatus;
+        }
+
+        std::size_t const expectedRanks = multiDeviceComms_.size();
+        std::vector<cudaStream_t> streams(operations.size(), nullptr);
+        std::vector<ncclResult_t> ncclStatuses(operations.size(), ncclSuccess);
+        std::vector<OpStatus> opStatuses(operations.size(), OpStatus::Success);
+
+        auto validateOperation = [&](std::size_t index) {
+            auto const& op = operations[index];
+            if(op.context == nullptr || op.localRank >= expectedRanks)
+            {
+                std::cout << "[NCCL-DEBUG] Operation validation failed for index " << index
+                          << " (context=" << (op.context != nullptr) << ", localRank=" << op.localRank
+                          << ", expectedRanks=" << expectedRanks << ")" << std::endl;
+                opStatuses[index] = OpStatus::Unsupported;
+                ncclStatuses[index] = ncclSystemError;
+                return false;
+            }
+            return true;
+        };
+
+        bool usedGroup = false;
+        bool groupFailed = false;
+
+    if(!groupFallbackThreadsEnabled_)
+        {
+            ncclResult_t const groupStart = ncclGroupStart();
+            if(groupStart == ncclSuccess)
+            {
+        std::cout << "[NCCL-DEBUG] allReduceMultiDevice using NCCL group path" << std::endl;
+                usedGroup = true;
+
+                for(std::size_t idx = 0; idx < operations.size(); ++idx)
+                {
+                    if(!validateOperation(idx))
+                    {
+                        groupFailed = true;
+                        continue;
+                    }
+
+                    auto const& op = operations[idx];
+            std::cout << "[NCCL-DEBUG] allReduceMultiDevice using thread fallback path" << std::endl;
+                    ncclResult_t const enqueueStatus = enqueueAllReduce(
+                        op.localRank,
+                        *op.context,
+                        op.sendBuffer,
+                        op.recvBuffer,
+                        op.elementCount,
+                        op.dtype,
+                        op.reduction,
+                        streams[idx]);
+
+                    ncclStatuses[idx] = enqueueStatus;
+                    if(enqueueStatus != ncclSuccess)
+                    {
+                        std::cout << "[NCCL-DEBUG] Group enqueue failed for rank " << op.localRank
+                                  << ": " << ncclGetErrorString(enqueueStatus) << std::endl;
+                        opStatuses[idx] = OpStatus::Error;
+                        groupFailed = true;
+                    }
+                }
+
+                ncclResult_t const groupEnd = ncclGroupEnd();
+                if(groupEnd != ncclSuccess)
+                {
+                    std::cout << "[NCCL-DEBUG] ncclGroupEnd returned error: " << ncclGetErrorString(groupEnd)
+                              << std::endl;
+                    groupFailed = true;
+                    if(operations.size() > 0)
+                    {
+                        ncclStatuses[0] = groupEnd;
+                        opStatuses[0] = OpStatus::Error;
+                    }
+                }
+            }
+            else
+            {
+                std::cout << "[NCCL-DEBUG] ncclGroupStart failed: " << ncclGetErrorString(groupStart) << std::endl;
+                reportNcclError("ncclGroupStart", groupStart, __FILE__, __LINE__);
+                groupFailed = true;
+                groupFallbackThreadsEnabled_ = true;
+            }
+        }
+
+        if(usedGroup && !groupFailed)
+        {
+            for(std::size_t idx = 0; idx < operations.size(); ++idx)
+            {
+                if(ncclStatuses[idx] != ncclSuccess)
+                {
+                    opStatuses[idx] = OpStatus::Error;
+                    continue;
+                }
+
+                auto const& op = operations[idx];
+                if(!op.async || synchronizeAfter)
+                {
+                    opStatuses[idx] = synchronizeRankStream(op.localRank, streams[idx]);
+                }
+                else
+                {
+                    opStatuses[idx] = OpStatus::Success;
+                }
+            }
+        }
+
+        if(!usedGroup || groupFailed)
+        {
+            if(usedGroup && groupFailed)
+            {
+                groupFallbackThreadsEnabled_ = true;
+            }
+
+            std::fill(streams.begin(), streams.end(), nullptr);
+            std::fill(ncclStatuses.begin(), ncclStatuses.end(), ncclSuccess);
+            std::fill(opStatuses.begin(), opStatuses.end(), OpStatus::Success);
+
+            std::vector<std::thread> workers;
+            workers.reserve(operations.size());
+
+            for(std::size_t idx = 0; idx < operations.size(); ++idx)
+            {
+                workers.emplace_back([&, idx]() {
+                    if(!validateOperation(idx))
+                    {
+                        return;
+                    }
+
+                    auto const& op = operations[idx];
+                    cudaStream_t stream = nullptr;
+                    ncclResult_t const enqueueStatus = enqueueAllReduce(
+                        op.localRank,
+                        *op.context,
+                        op.sendBuffer,
+                        op.recvBuffer,
+                        op.elementCount,
+                        op.dtype,
+                        op.reduction,
+                        stream);
+
+                    streams[idx] = stream;
+                    ncclStatuses[idx] = enqueueStatus;
+
+                    if(enqueueStatus != ncclSuccess)
+                    {
+                        std::cout << "[NCCL-DEBUG] Thread enqueue failed for rank " << op.localRank
+                                  << ": " << ncclGetErrorString(enqueueStatus) << std::endl;
+                        opStatuses[idx] = OpStatus::Error;
+                        return;
+                    }
+
+                    if(!op.async || synchronizeAfter)
+                    {
+                        opStatuses[idx] = synchronizeRankStream(op.localRank, stream);
+                        if(opStatuses[idx] != OpStatus::Success)
+                        {
+                            std::cout << "[NCCL-DEBUG] Thread sync failed for rank " << op.localRank << std::endl;
+                        }
+                    }
+                    else
+                    {
+                        opStatuses[idx] = OpStatus::Success;
+                    }
+                });
+            }
+
+            for(auto& worker : workers)
+            {
+                if(worker.joinable())
+                {
+                    worker.join();
+                }
+            }
+        }
+
+        bool hasUnsupported = false;
+        bool hasError = false;
+
+        for(std::size_t idx = 0; idx < operations.size(); ++idx)
+        {
+            if(ncclStatuses[idx] != ncclSuccess)
+            {
+                reportNcclError("ncclAllReduce", ncclStatuses[idx], __FILE__, __LINE__);
+                hasError = true;
+            }
+
+            switch(opStatuses[idx])
+            {
+            case OpStatus::Error:
+                hasError = true;
+                break;
+            case OpStatus::Unsupported:
+                hasUnsupported = true;
+                break;
+            default:
+                break;
+            }
+        }
+
+        if(!hasError && synchronizeAfter)
+        {
+            synchronizeParticipants();
+        }
+
+        if(hasError)
+        {
+            return OpStatus::Error;
+        }
+        if(hasUnsupported)
+        {
+            return OpStatus::Unsupported;
+        }
+        return OpStatus::Success;
     }
 
     inline std::size_t NCCLProvider::resolveLocalRank(CollectiveExecutionContext const& ctx) const
     {
-    if(mode_ == NCCLProvider::ExecutionMode::SingleProcessMultiDevice && ctx.queue != nullptr)
+        if(mode_ == NCCLProvider::ExecutionMode::SingleProcessMultiDevice)
         {
-            for(std::size_t i = 0; i < multiDeviceQueues_.size(); ++i)
+            if(ctx.deviceId >= 0)
             {
-                if(multiDeviceQueues_[i] == ctx.queue)
-                    return i;
+                for(std::size_t i = 0; i < multiDeviceDeviceIds_.size(); ++i)
+                {
+                    if(multiDeviceDeviceIds_[i] == ctx.deviceId)
+                        return i;
+                }
+            }
+
+            if(ctx.queue != nullptr)
+            {
+                for(std::size_t i = 0; i < multiDeviceQueues_.size(); ++i)
+                {
+                    if(multiDeviceQueues_[i] == ctx.queue)
+                        return i;
+                }
             }
         }
 
@@ -566,6 +1079,35 @@ namespace alpaka::tensor
         default:
             return nullptr;
         }
+    }
+
+    inline int NCCLProvider::resolveDeviceId(CollectiveExecutionContext const& participant, std::size_t fallbackIndex) const
+    {
+        if(participant.deviceId >= 0)
+            return participant.deviceId;
+
+        if(participant.nativeDevice != nullptr)
+            return static_cast<int>(reinterpret_cast<uintptr_t>(participant.nativeDevice));
+
+        return static_cast<int>(fallbackIndex);
+    }
+
+    inline void NCCLProvider::reportCudaError(char const* expr, cudaError_t status, char const* file, int line)
+    {
+        if(status == cudaSuccess)
+            return;
+
+        std::cerr << "[alpaka][tensor][NCCL] CUDA call '" << expr << "' failed with '" << cudaGetErrorString(status)
+                  << "' (code " << static_cast<int>(status) << ") at " << file << ':' << line << std::endl;
+    }
+
+    inline void NCCLProvider::reportNcclError(char const* expr, ncclResult_t status, char const* file, int line)
+    {
+        if(status == ncclSuccess)
+            return;
+
+        std::cerr << "[alpaka][tensor][NCCL] NCCL call '" << expr << "' failed with '" << ncclGetErrorString(status)
+                  << "' (code " << static_cast<int>(status) << ") at " << file << ':' << line << std::endl;
     }
 
     inline void NCCLProvider::updateWorldTracking(std::size_t localRank) const
@@ -612,38 +1154,30 @@ namespace alpaka::tensor
         if(!active_)
             return OpStatus::Unsupported;
 
-        std::size_t localRank = resolveLocalRank(ctx);
-        setCudaDeviceForRank(localRank);
-
-        ncclComm_t communicator = resolveCommunicator(localRank);
-        if(communicator == nullptr)
-            return OpStatus::Unsupported;
-
-        cudaStream_t cudaStream = ctx.nativeQueue ? static_cast<cudaStream_t>(ctx.nativeQueue) : nullptr;
-        ncclResult_t status = ncclAllReduce(
+        std::size_t const localRank = resolveLocalRank(ctx);
+        cudaStream_t stream = nullptr;
+        ncclResult_t const enqueueStatus = enqueueAllReduce(
+            localRank,
+            ctx,
             sendBuffer,
             recvBuffer,
             elementCount,
-            mapDataType(dtype),
-            mapReduction(reduction),
-            communicator,
-            cudaStream);
-        if(status != ncclSuccess)
+            dtype,
+            reduction,
+            stream);
+
+        if(enqueueStatus != ncclSuccess)
+        {
+            reportNcclError("ncclAllReduce", enqueueStatus, __FILE__, __LINE__);
             return OpStatus::Error;
+        }
 
         if(!async)
         {
-            if(cudaStream != nullptr)
+            OpStatus const syncStatus = synchronizeRankStream(localRank, stream);
+            if(syncStatus != OpStatus::Success)
             {
-                cudaError_t cudaStatus = cudaStreamSynchronize(cudaStream);
-                if(cudaStatus != cudaSuccess)
-                    return OpStatus::Error;
-            }
-            else
-            {
-                cudaError_t cudaStatus = cudaDeviceSynchronize();
-                if(cudaStatus != cudaSuccess)
-                    return OpStatus::Error;
+                return syncStatus;
             }
         }
         return OpStatus::Success;
@@ -668,7 +1202,18 @@ namespace alpaka::tensor
         if(communicator == nullptr)
             return OpStatus::Unsupported;
 
-        cudaStream_t cudaStream = ctx.nativeQueue ? static_cast<cudaStream_t>(ctx.nativeQueue) : nullptr;
+        if(localRank < multiDeviceQueues_.size())
+            multiDeviceQueues_[localRank] = ctx.queue;
+
+        cudaStream_t cudaStream = nullptr;
+        if(mode_ == NCCLProvider::ExecutionMode::SingleProcessMultiDevice && localRank < multiDeviceStreams_.size())
+        {
+            cudaStream = multiDeviceStreams_[localRank];
+        }
+        if(cudaStream == nullptr && ctx.nativeQueue != nullptr)
+        {
+            cudaStream = static_cast<cudaStream_t>(ctx.nativeQueue);
+        }
         ncclResult_t status = ncclBroadcast(
             static_cast<void const*>(buffer),
             buffer,
@@ -678,21 +1223,18 @@ namespace alpaka::tensor
             communicator,
             cudaStream);
         if(status != ncclSuccess)
+        {
+            reportNcclError("ncclBroadcast", status, __FILE__, __LINE__);
             return OpStatus::Error;
+        }
 
         if(!async)
         {
-            if(cudaStream != nullptr)
+            cudaError_t const cudaStatus = (cudaStream != nullptr) ? cudaStreamSynchronize(cudaStream) : cudaDeviceSynchronize();
+            if(cudaStatus != cudaSuccess)
             {
-                cudaError_t cudaStatus = cudaStreamSynchronize(cudaStream);
-                if(cudaStatus != cudaSuccess)
-                    return OpStatus::Error;
-            }
-            else
-            {
-                cudaError_t cudaStatus = cudaDeviceSynchronize();
-                if(cudaStatus != cudaSuccess)
-                    return OpStatus::Error;
+                reportCudaError(cudaStream != nullptr ? "cudaStreamSynchronize" : "cudaDeviceSynchronize", cudaStatus, __FILE__, __LINE__);
+                return OpStatus::Error;
             }
         }
         return OpStatus::Success;
@@ -711,18 +1253,24 @@ namespace alpaka::tensor
         if(communicator == nullptr)
             return OpStatus::Unsupported;
 
-        cudaStream_t cudaStream = ctx.nativeQueue ? static_cast<cudaStream_t>(ctx.nativeQueue) : nullptr;
-        if(cudaStream != nullptr)
+        if(localRank < multiDeviceQueues_.size())
+            multiDeviceQueues_[localRank] = ctx.queue;
+
+        cudaStream_t cudaStream = nullptr;
+        if(mode_ == NCCLProvider::ExecutionMode::SingleProcessMultiDevice && localRank < multiDeviceStreams_.size())
         {
-            cudaError_t cudaStatus = cudaStreamSynchronize(cudaStream);
-            if(cudaStatus != cudaSuccess)
-                return OpStatus::Error;
+            cudaStream = multiDeviceStreams_[localRank];
         }
-        else
+        if(cudaStream == nullptr && ctx.nativeQueue != nullptr)
         {
-            cudaError_t cudaStatus = cudaDeviceSynchronize();
-            if(cudaStatus != cudaSuccess)
-                return OpStatus::Error;
+            cudaStream = static_cast<cudaStream_t>(ctx.nativeQueue);
+        }
+
+        cudaError_t const cudaStatus = (cudaStream != nullptr) ? cudaStreamSynchronize(cudaStream) : cudaDeviceSynchronize();
+        if(cudaStatus != cudaSuccess)
+        {
+            reportCudaError(cudaStream != nullptr ? "cudaStreamSynchronize" : "cudaDeviceSynchronize", cudaStatus, __FILE__, __LINE__);
+            return OpStatus::Error;
         }
         return OpStatus::Success;
     }

@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <type_traits>
 #include <vector>
 
 namespace alpaka::tensor
@@ -20,6 +22,7 @@ namespace alpaka::tensor
         void* queue{nullptr};
         void* nativeQueue{nullptr};
         void* nativeDevice{nullptr};
+        int deviceId{-1};
         std::size_t globalRank{0};
         std::size_t globalSize{1};
         std::size_t localRank{0};
@@ -43,6 +46,25 @@ namespace alpaka::tensor
         struct MultiDeviceGroup
         {
             std::vector<CollectiveExecutionContext> participants;
+        };
+
+        /**
+         * @brief Structure describing a single all-reduce operation for multi-device execution.
+         * 
+         * This struct contains all the information needed to perform an all-reduce operation
+         * on a specific device/rank within a multi-device collective. Multiple operations
+         * of this type can be batched together for concurrent execution.
+         */
+        struct MultiDeviceAllReduceOp
+        {
+            std::size_t localRank{0};                             ///< Local rank/device index within the collective
+            CollectiveExecutionContext const* context{nullptr};    ///< Execution context (device, queue, etc.)
+            void const* sendBuffer{nullptr};                       ///< Input data buffer
+            void* recvBuffer{nullptr};                             ///< Output data buffer (can be same as sendBuffer)
+            std::size_t elementCount{0};                           ///< Number of elements in the buffer
+            ops::CollectiveDataType dtype{ops::CollectiveDataType::Float32};  ///< Data type of elements
+            ops::CollectiveReduction reduction{ops::CollectiveReduction::Sum}; ///< Reduction operation
+            bool async{false};                                     ///< Whether to synchronize immediately after the operation
         };
 
         struct MultiProcessBootstrap
@@ -92,6 +114,30 @@ namespace alpaka::tensor
         {
         }
 
+        /**
+         * @brief Perform batched all-reduce operations across multiple devices.
+         *
+         * This method allows efficient execution of multiple all-reduce operations
+         * concurrently, which is essential for multi-GPU collective communication
+         * where all participants must call the operation simultaneously.
+         *
+         * For providers like NCCL, this method uses either group semantics
+         * (ncclGroupStart/ncclGroupEnd) or launches operations concurrently
+         * using threads to avoid deadlocks.
+         *
+         * @param operations Vector of all-reduce operations to execute
+         * @param synchronizeAfter If true, wait for all operations to complete before returning
+         * @return OpStatus indicating success, error, or unsupported
+         */
+        virtual OpStatus allReduceMultiDevice(
+            std::vector<MultiDeviceAllReduceOp> const& operations,
+            bool synchronizeAfter)
+        {
+            (void)operations;
+            (void)synchronizeAfter;
+            return OpStatus::Unsupported;
+        }
+
         template<typename Exec, typename Device, typename Queue>
         OpStatus allReduce(
             Exec const& exec,
@@ -119,7 +165,19 @@ namespace alpaka::tensor
             }
             if constexpr(requires { alpaka::onHost::getNativeHandle(device); })
             {
-                ctx.nativeDevice = reinterpret_cast<void*>(alpaka::onHost::getNativeHandle(device));
+                auto nativeDevice = alpaka::onHost::getNativeHandle(device);
+                if constexpr(std::is_pointer_v<decltype(nativeDevice)>)
+                {
+                    ctx.nativeDevice = const_cast<void*>(reinterpret_cast<void const*>(nativeDevice));
+                }
+                else
+                {
+                    ctx.nativeDevice = reinterpret_cast<void*>(static_cast<uintptr_t>(nativeDevice));
+                }
+                if constexpr(std::is_integral_v<decltype(nativeDevice)>)
+                {
+                    ctx.deviceId = static_cast<int>(nativeDevice);
+                }
             }
             if(ctx.localSize > 0)
             {
@@ -157,7 +215,19 @@ namespace alpaka::tensor
             }
             if constexpr(requires { alpaka::onHost::getNativeHandle(device); })
             {
-                ctx.nativeDevice = reinterpret_cast<void*>(alpaka::onHost::getNativeHandle(device));
+                auto nativeDevice = alpaka::onHost::getNativeHandle(device);
+                if constexpr(std::is_pointer_v<decltype(nativeDevice)>)
+                {
+                    ctx.nativeDevice = const_cast<void*>(reinterpret_cast<void const*>(nativeDevice));
+                }
+                else
+                {
+                    ctx.nativeDevice = reinterpret_cast<void*>(static_cast<uintptr_t>(nativeDevice));
+                }
+                if constexpr(std::is_integral_v<decltype(nativeDevice)>)
+                {
+                    ctx.deviceId = static_cast<int>(nativeDevice);
+                }
             }
             if(ctx.localSize > 0)
             {
@@ -187,7 +257,19 @@ namespace alpaka::tensor
             }
             if constexpr(requires { alpaka::onHost::getNativeHandle(device); })
             {
-                ctx.nativeDevice = reinterpret_cast<void*>(alpaka::onHost::getNativeHandle(device));
+                auto nativeDevice = alpaka::onHost::getNativeHandle(device);
+                if constexpr(std::is_pointer_v<decltype(nativeDevice)>)
+                {
+                    ctx.nativeDevice = const_cast<void*>(reinterpret_cast<void const*>(nativeDevice));
+                }
+                else
+                {
+                    ctx.nativeDevice = reinterpret_cast<void*>(static_cast<uintptr_t>(nativeDevice));
+                }
+                if constexpr(std::is_integral_v<decltype(nativeDevice)>)
+                {
+                    ctx.deviceId = static_cast<int>(nativeDevice);
+                }
             }
             if(ctx.localSize > 0)
             {

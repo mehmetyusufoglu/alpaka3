@@ -11,12 +11,15 @@
 #include <alpaka/tensor/providers/RCCLProvider.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
 #include <iostream>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <thread>
+#include <future>
 
 namespace at = alpaka::tensor;
 namespace ops = alpaka::tensor::ops;
@@ -205,14 +208,7 @@ namespace
             ctx.globalSize = participants.size();
             ctx.localRank = participant.rank;
             ctx.localSize = participants.size();
-            if constexpr(requires { alpaka::onHost::getNativeHandle(participant.queue); })
-            {
-                ctx.nativeQueue = reinterpret_cast<void*>(alpaka::onHost::getNativeHandle(participant.queue));
-            }
-            if constexpr(requires { alpaka::onHost::getNativeHandle(participant.device); })
-            {
-                ctx.nativeDevice = reinterpret_cast<void*>(alpaka::onHost::getNativeHandle(participant.device));
-            }
+            ctx.deviceId = static_cast<int>(participant.rank);
             group.participants.emplace_back(ctx);
         }
 
@@ -226,29 +222,38 @@ namespace
 
         auto dtype = ops::collectiveDataType<float>();
 
+        std::vector<at::ICollectiveProvider::MultiDeviceAllReduceOp> operations;
+        operations.reserve(participants.size());
+
         for(std::size_t idx = 0; idx < participants.size(); ++idx)
         {
-            auto buffer = participants[idx].tensor.deviceBuffer(participants[idx].device, participants[idx].queue);
-            provider.setActiveParticipant(idx);
-            auto status = provider.allReduce(
-                exec,
-                participants[idx].device,
-                participants[idx].queue,
-                buffer.data(),
-                buffer.data(),
-                elementCount,
-                dtype,
-                ops::CollectiveReduction::Sum,
-                true);
-            if(status != at::OpStatus::Success)
-            {
-                std::cerr << "[multi-collective] allReduce launch failed on rank " << idx << '\n';
-                return 1;
-            }
-            buffer.destructorWaitFor(participants[idx].queue);
+            auto& buffer = participants[idx].tensor.deviceBuffer(participants[idx].device, participants[idx].queue);
+
+            at::ICollectiveProvider::MultiDeviceAllReduceOp op{};
+            op.localRank = participants[idx].rank;
+            op.context = &group.participants[idx];
+            op.sendBuffer = buffer.data();
+            op.recvBuffer = buffer.data();
+            op.elementCount = elementCount;
+            op.dtype = dtype;
+            op.reduction = ops::CollectiveReduction::Sum;
+            op.async = true;
+            operations.emplace_back(op);
         }
 
-        provider.synchronizeParticipants();
+        auto collectiveStatus = provider.allReduceMultiDevice(operations, /*synchronizeAfter*/ true);
+        if(collectiveStatus != at::OpStatus::Success)
+        {
+            std::cerr << "[multi-collective] allReduceMultiDevice failed with status "
+                      << static_cast<int>(collectiveStatus) << '\n';
+            return 1;
+        }
+
+        for(std::size_t idx = 0; idx < participants.size(); ++idx)
+        {
+            auto& buffer = participants[idx].tensor.deviceBuffer(participants[idx].device, participants[idx].queue);
+            buffer.destructorWaitFor(participants[idx].queue);
+        }
 
         bool validationOk = true;
         float expectedScale = static_cast<float>(participants.size() * (participants.size() + 1)) * 0.5f;
