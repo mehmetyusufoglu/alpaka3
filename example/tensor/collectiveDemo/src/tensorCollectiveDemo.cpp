@@ -229,7 +229,7 @@ namespace
 
             values.markDeviceModified(device, queue);
             values.toHost(device, queue);
-            queue.wait();
+            alpaka::onHost::wait(queue);
 
             std::cout << "Rank " << groupConfig.worldRank << " result:";
             for(std::size_t i = 0; i < elementCount; ++i)

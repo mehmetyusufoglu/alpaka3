@@ -9,6 +9,8 @@ project(alpaka)
 
 # This file's directory.
 set(_alpaka_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR})
+set(_alpaka_CMAKE_DIR "${_alpaka_ROOT_DIR}/cmake")
+set(_alpaka_FEATURE_TESTS_DIR "${_alpaka_CMAKE_DIR}/tests")
 
 # Vendor math/DNN libraries are auto-detected when their backend (CUDA/HIP) is enabled;
 # no explicit toggle options are required.
@@ -127,7 +129,10 @@ if(NOT TARGET alpaka)
     add_library(alpaka::headers ALIAS alpaka_target_headers)
     target_compile_definitions(alpaka_target_headers INTERFACE ALPAKA_CMAKE_TARGET_HEADERS)
 
-    add_library(alpaka::host ALIAS alpaka_target_headers)
+    add_library(alpaka_target_host INTERFACE)
+    add_library(alpaka::host ALIAS alpaka_target_host)
+    target_compile_definitions(alpaka_target_host INTERFACE ALPAKA_CMAKE_TARGET_HOST)
+    target_link_libraries(alpaka_target_host INTERFACE alpaka_target_headers)
 
     target_include_directories(
         alpaka_target_headers
@@ -135,7 +140,7 @@ if(NOT TARGET alpaka)
     )
     target_compile_features(alpaka_target_headers INTERFACE cxx_std_${alpaka_CXX_STANDARD})
 
-    target_link_libraries(alpaka INTERFACE alpaka_target_headers)
+    target_link_libraries(alpaka INTERFACE alpaka_target_host)
 endif()
 
 ## OpenMP
