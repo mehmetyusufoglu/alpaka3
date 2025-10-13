@@ -6,6 +6,7 @@
 #include <alpaka/tensor/providers/EnabledVendorLibs.hpp>
 #include <alpaka/tensor/providers/collective/CollectiveProviderInterface.hpp>
 
+#include <cstring>
 #include <optional>
 #include <vector>
 
@@ -86,6 +87,8 @@ namespace alpaka::tensor::collective
 
         std::size_t worldSize() const override
         {
+            if(worldSizeOverride_ > 0)
+                return worldSizeOverride_;
             return devices_.size();
         }
 
@@ -96,6 +99,47 @@ namespace alpaka::tensor::collective
                 return OpStatus::Unsupported;
 
 #ifdef ALPAKA_HAS_NCCL
+            if(config.multiProcess)
+            {
+                if(config.worldSize <= 0)
+                {
+                    reset();
+                    return OpStatus::Error;
+                }
+                if(config.deviceIds.size() != 1u)
+                {
+                    reset();
+                    return OpStatus::Error;
+                }
+                if(config.providerUniqueId.size() != sizeof(ncclUniqueId))
+                {
+                    reset();
+                    return OpStatus::Error;
+                }
+
+                devices_ = config.deviceIds;
+                comms_.resize(1u);
+                ncclUniqueId id{};
+                std::memcpy(&id, config.providerUniqueId.data(), sizeof(ncclUniqueId));
+
+                if(cudaSetDevice(devices_.front()) != cudaSuccess)
+                {
+                    reset();
+                    return OpStatus::Error;
+                }
+
+                auto const initStatus = ncclCommInitRank(&comms_.front(), config.worldSize, id, config.worldRank);
+                if(initStatus != ncclSuccess)
+                {
+                    reset();
+                    return OpStatus::Error;
+                }
+
+                worldSizeOverride_ = static_cast<std::size_t>(config.worldSize);
+                active_ = true;
+                return OpStatus::Success;
+            }
+
             auto deviceIds = config.deviceIds;
             if(deviceIds.empty())
             {
@@ -165,6 +209,21 @@ namespace alpaka::tensor::collective
 
             auto getRecvPtr = [&](std::size_t idx) -> void* { return request.buffers.recv[idx]; };
 
+            if(deviceCount == 1u)
+            {
+                if(cudaSetDevice(devices_.front()) != cudaSuccess)
+                    return OpStatus::Error;
+
+                auto const sendPtr = getSendPtr(0u);
+                auto const recvPtr = getRecvPtr(0u);
+                auto const stream = getStream(0u);
+                auto const status
+                    = ncclAllReduce(sendPtr, recvPtr, request.elementCount, *dtype, *rop, comms_.front(), stream);
+                if(status != ncclSuccess)
+                    return OpStatus::Error;
+                return OpStatus::Success;
+            }
+
             ncclResult_t launchStatus = ncclGroupStart();
             if(launchStatus != ncclSuccess)
                 return OpStatus::Error;
@@ -214,6 +273,7 @@ namespace alpaka::tensor::collective
 #endif
             devices_.clear();
             active_ = false;
+            worldSizeOverride_ = 0u;
         }
 
 #ifdef ALPAKA_HAS_NCCL
@@ -223,5 +283,6 @@ namespace alpaka::tensor::collective
 #endif
         std::vector<int> devices_{};
         bool active_{false};
+        std::size_t worldSizeOverride_{0u};
     };
 } // namespace alpaka::tensor::collective

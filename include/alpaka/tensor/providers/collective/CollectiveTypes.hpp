@@ -41,6 +41,7 @@ namespace alpaka::tensor::collective
         bool multiProcess = false;
         int worldRank = 0;
         int worldSize = 0;
+        std::vector<std::byte> providerUniqueId{};
     };
 
     struct MultiDeviceBuffers

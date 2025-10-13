@@ -14,24 +14,123 @@
 
 #include <array>
 #include <cstddef>
+#include <cstring>
 #include <iostream>
 #include <span>
 #include <type_traits>
+#include <vector>
+
+#ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
+#    include <mpi.h>
+#endif
+
+#ifdef ALPAKA_HAS_NCCL
+#    include <nccl.h>
+#endif
 
 namespace tt = alpaka::tensor;
 namespace collective = alpaka::tensor::collective;
 
 namespace
 {
+    struct MultiProcessBootstrap
+    {
+        bool enabled = false;
+        bool finalizeMpi = false;
+        int worldRank = 0;
+        int worldSize = 1;
+        std::vector<std::byte> uniqueId{};
+    };
+
+#ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
+    MultiProcessBootstrap prepareBootstrap(int& argc, char**& argv)
+    {
+        MultiProcessBootstrap bootstrap{};
+        int initialized = 0;
+        MPI_Initialized(&initialized);
+        if(!initialized)
+        {
+            int provided = MPI_THREAD_SINGLE;
+            MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+            bootstrap.finalizeMpi = true;
+        }
+
+        MPI_Comm_size(MPI_COMM_WORLD, &bootstrap.worldSize);
+        MPI_Comm_rank(MPI_COMM_WORLD, &bootstrap.worldRank);
+        bootstrap.enabled = bootstrap.worldSize > 1;
+
+#    ifdef ALPAKA_HAS_NCCL
+        if(bootstrap.enabled)
+        {
+            ncclUniqueId id{};
+            if(bootstrap.worldRank == 0)
+            {
+                auto const result = ncclGetUniqueId(&id);
+                if(result != ncclSuccess)
+                {
+                    std::cerr << "ncclGetUniqueId failed with status=" << static_cast<int>(result)
+                              << "; multi-rank NCCL disabled.\n";
+                    bootstrap.enabled = false;
+                }
+            }
+
+            int const broadcastResult
+                = MPI_Bcast(&id, static_cast<int>(sizeof(ncclUniqueId)), MPI_BYTE, 0, MPI_COMM_WORLD);
+            if(broadcastResult != MPI_SUCCESS)
+            {
+                std::cerr << "MPI_Bcast failed while distributing NCCL unique ID; multi-rank NCCL disabled.\n";
+                bootstrap.enabled = false;
+            }
+            int enabledFlag = bootstrap.enabled ? 1 : 0;
+            MPI_Bcast(&enabledFlag, 1, MPI_INT, 0, MPI_COMM_WORLD);
+            bootstrap.enabled = enabledFlag != 0;
+
+            if(bootstrap.enabled)
+            {
+                bootstrap.uniqueId.resize(sizeof(ncclUniqueId));
+                std::memcpy(bootstrap.uniqueId.data(), &id, sizeof(ncclUniqueId));
+            }
+            else
+            {
+                bootstrap.uniqueId.clear();
+            }
+        }
+#    endif
+
+        return bootstrap;
+    }
+#else
+    MultiProcessBootstrap prepareBootstrap(int&, char**&)
+    {
+        return {};
+    }
+#endif
+
+    void finalizeBootstrap(MultiProcessBootstrap& bootstrap)
+    {
+#ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
+        if(bootstrap.finalizeMpi)
+        {
+            MPI_Finalize();
+            bootstrap.finalizeMpi = false;
+        }
+#else
+        static_cast<void>(bootstrap);
+#endif
+    }
+
     template<typename Tag>
-    int runCollectiveDemo(Tag const& tag)
+    int runCollectiveDemo(Tag const& tag, MultiProcessBootstrap const& bootstrap)
     {
         auto const& deviceSpec = tag[alpaka::object::deviceSpec];
         auto const& exec = tag[alpaka::object::exec];
         auto selector = alpaka::onHost::makeDeviceSelector(deviceSpec);
         if(!selector.isAvailable())
         {
-            std::cout << "Skipping backend " << deviceSpec.getApi().getName() << " (no device available)\n";
+            if(!bootstrap.enabled || bootstrap.worldRank == 0)
+            {
+                std::cout << "Skipping backend " << deviceSpec.getApi().getName() << " (no device available)\n";
+            }
             return 0;
         }
 
@@ -41,13 +140,23 @@ namespace
         using Device = decltype(device);
         using Exec = std::decay_t<decltype(exec)>;
 
-        std::cout << "\n=== Tensor Collective Demo ===\n";
-        std::cout << "API: " << deviceSpec.getApi().getName() << '\n';
-        std::cout << "Executor: " << alpaka::onHost::demangledName(exec) << '\n';
+        if(!bootstrap.enabled || bootstrap.worldRank == 0)
+        {
+            std::cout << "\n=== Tensor Collective Demo ===\n";
+            std::cout << "API: " << deviceSpec.getApi().getName() << '\n';
+            std::cout << "Executor: " << alpaka::onHost::demangledName(exec) << '\n';
+            if(bootstrap.enabled)
+            {
+                std::cout << "World size: " << bootstrap.worldSize << '\n';
+            }
+        }
 
         if(!tt::EnabledVendorLibs::hasNCCL)
         {
-            std::cout << "NCCL support not enabled in this build; skipping collective test.\n";
+            if(!bootstrap.enabled || bootstrap.worldRank == 0)
+            {
+                std::cout << "NCCL support not enabled in this build; skipping collective test.\n";
+            }
             return 0;
         }
 
@@ -56,15 +165,28 @@ namespace
             auto context = tt::createCleanTensorOpContext(exec, device, queue);
 
             collective::GroupConfig groupConfig{};
-            groupConfig.deviceIds.push_back(0); // demo uses first visible CUDA device
-            groupConfig.worldRank = 0;
-            groupConfig.worldSize = static_cast<int>(groupConfig.deviceIds.size());
+            groupConfig.deviceIds.push_back(0); // assumes CUDA_VISIBLE_DEVICES pins ranks appropriately
+            if(bootstrap.enabled)
+            {
+                groupConfig.multiProcess = true;
+                groupConfig.worldRank = bootstrap.worldRank;
+                groupConfig.worldSize = bootstrap.worldSize;
+                groupConfig.providerUniqueId = bootstrap.uniqueId;
+            }
+            else
+            {
+                groupConfig.worldRank = 0;
+                groupConfig.worldSize = static_cast<int>(groupConfig.deviceIds.size());
+            }
 
             auto const configureStatus = context.configureCollectives(groupConfig);
             if(configureStatus != tt::OpStatus::Success)
             {
-                std::cout << "Collective provider unavailable (status=" << static_cast<int>(configureStatus)
-                          << "); skipping NCCL call.\n";
+                if(!bootstrap.enabled || bootstrap.worldRank == 0)
+                {
+                    std::cout << "Collective provider unavailable (status=" << static_cast<int>(configureStatus)
+                              << "); skipping NCCL call.\n";
+                }
                 return 0;
             }
 
@@ -97,33 +219,51 @@ namespace
             auto const reduceStatus = context.collectiveAllReduce(request);
             if(reduceStatus != tt::OpStatus::Success)
             {
-                std::cout << "ncclAllReduce invocation returned status=" << static_cast<int>(reduceStatus)
-                          << "; skipping verification.\n";
+                if(!bootstrap.enabled || bootstrap.worldRank == 0)
+                {
+                    std::cout << "ncclAllReduce invocation returned status=" << static_cast<int>(reduceStatus)
+                              << "; skipping verification.\n";
+                }
                 return 0;
             }
 
             values.markDeviceModified(device, queue);
             values.toHost(device, queue);
+            queue.wait();
 
-            std::cout << "All-reduce result (single-rank demo):";
+            std::cout << "Rank " << groupConfig.worldRank << " result:";
             for(std::size_t i = 0; i < elementCount; ++i)
                 std::cout << ' ' << hostValues[i];
-            std::cout << "\n(Note: With a single GPU the values remain unchanged; on multi-GPU systems they represent "
-                         "the rank sum.)\n";
+            if(bootstrap.enabled)
+            {
+                std::cout << "\n";
+            }
+            else
+            {
+                std::cout
+                    << "\n(Note: With a single GPU the values remain unchanged; on multi-GPU systems they represent "
+                       "the rank sum.)\n";
+            }
 
             return 0;
         }
         else
         {
-            std::cout << "Collective provider for NCCL is only available on CUDA executors; skipping.\n";
+            if(!bootstrap.enabled || bootstrap.worldRank == 0)
+            {
+                std::cout << "Collective provider for NCCL is only available on CUDA executors; skipping.\n";
+            }
             return 0;
         }
     }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
-    return alpaka::onHost::executeForEachIfHasDevice(
-        [](auto const& tag) { return runCollectiveDemo(tag); },
+    auto bootstrap = prepareBootstrap(argc, argv);
+    auto const result = alpaka::onHost::executeForEachIfHasDevice(
+        [&bootstrap](auto const& tag) { return runCollectiveDemo(tag, bootstrap); },
         alpaka::onHost::allBackends(alpaka::onHost::enabledApis, alpaka::onHost::example::enabledExecutors));
+    finalizeBootstrap(bootstrap);
+    return result;
 }

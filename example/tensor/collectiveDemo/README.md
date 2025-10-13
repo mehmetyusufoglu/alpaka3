@@ -2,10 +2,10 @@
 
 This example demonstrates Alpaka's experimental NCCL collective provider.
 
-- Configures a single-rank `CleanTensorOpContext` using the first CUDA device.
+- Configures a `CleanTensorOpContext` on the first CUDA device.
 - Runs an in-place NCCL all-reduce to verify the provider wiring.
 - Falls back cleanly when CUDA or NCCL is missing.
-- Needs external process bootstrap (e.g., MPI) before it can scale to multiple ranks or nodes.
+- Uses MPI (when available) to bootstrap multi-process NCCL communicators.
 
 ## Getting NCCL Running
 
@@ -23,5 +23,7 @@ This example demonstrates Alpaka's experimental NCCL collective provider.
     - Set environment tuning knobs (e.g., `NCCL_P2P_DISABLE=0`, `NCCL_SOCKET_IFNAME`) only if your fabric requires them.
 
 4. **Scale beyond a single rank**
-    - Provide an external bootstrap mechanism (MPI, TCP, etc.) to exchange NCCL unique IDs across processes before calling `configureCollectives`.
-    - Launch one process per GPU, populate `GroupConfig.deviceIds`, `worldRank`, and `worldSize` for each rank, and rerun the demo to exercise multi-GPU communicators.
+    - Build with MPI available on your system. CMake picks up `MPI::MPI_CXX`/`MPI::MPI_C` automatically and enables NCCL bootstrap support.
+    - Launch the demo with one process per GPU (e.g., `srun -N2 -n4 bash -lc 'mpirun -n 4 ./tensorCollectiveDemo'`). Rank 0 generates a NCCL unique ID and broadcasts it with MPI.
+    - Ensure each rank exposes exactly one CUDA device (set `CUDA_VISIBLE_DEVICES` or rely on Slurm binding) so the demo maps MPI ranks to GPUs.
+    - Verify the output prints one line per rank with the reduced values. The vector entries should equal the sum of all ranks when NCCL is active.
