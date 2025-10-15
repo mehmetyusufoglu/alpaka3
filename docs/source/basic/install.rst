@@ -33,6 +33,7 @@ Download the installer from https://cmake.org/download/
 - NVIDIA GPUs: CUDA Toolkit (https://developer.nvidia.com/cuda-toolkit)
 - AMD GPUs: ROCm / HIP (https://rocmdocs.amd.com/en/latest/index.html)
 - Intel GPUs: OneAPI Toolkit (https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html#gs.9x3lnh)
+- TBB backend (host CPU): oneTBB 2021.10 or newer (Intel may ship these as 2022.x releases)
 
 alpaka as Dependency in Your Application
 ++++++++++++++++++++++++++++++++++++++++

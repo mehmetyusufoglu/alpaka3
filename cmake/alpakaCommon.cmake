@@ -194,7 +194,14 @@ if(alpaka_DEP_OMP)
 endif()
 
 if(alpaka_DEP_TBB)
-    find_package(TBB 2021.10 REQUIRED COMPONENTS tbb)
+    find_package(TBB 2021.10 COMPONENTS tbb)
+    if(NOT TBB_FOUND)
+        message(
+            FATAL_ERROR
+            "oneTBB (2021.10 or newer) is required when alpaka_DEP_TBB=ON. "
+            "Install Intel oneTBB and reconfigure, or disable the TBB backend."
+        )
+    endif()
     target_link_libraries(alpaka_target_host INTERFACE TBB::tbb)
     target_compile_definitions(alpaka_target_host INTERFACE ALPAKA_TBB=1)
     message(STATUS "oneTBB found: ${TBB_VERSION}")
