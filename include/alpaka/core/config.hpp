@@ -273,3 +273,8 @@
 #        define ALPAKA_OMP ALPAKA_VERSION_NUMBER_NOT_AVAILABLE
 #    endif
 #endif
+
+// oneTBB (set to zero unless provided via build system)
+#if !defined(ALPAKA_TBB)
+#    define ALPAKA_TBB 0
+#endif

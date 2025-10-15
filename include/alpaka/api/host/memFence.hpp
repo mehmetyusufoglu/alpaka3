@@ -57,6 +57,21 @@ namespace alpaka::onAcc::internalCompute
             std::atomic_thread_fence(std::memory_order_acq_rel);
         }
 
+        inline void hostMemoryFenceImpl(exec::CpuTbbBlocks const&, scope::Block const)
+        {
+            // Block scope: NO-OP for TBB since simulated single-thread blocks
+        }
+
+        inline void hostMemoryFenceImpl(exec::CpuTbbBlocks const&, scope::Device const)
+        {
+            std::atomic_thread_fence(std::memory_order_acq_rel);
+        }
+
+        inline void hostMemoryFenceImpl(exec::CpuTbbBlocks const&, scope::System const)
+        {
+            std::atomic_thread_fence(std::memory_order_acq_rel);
+        }
+
 #if defined(__GNUC__) && !defined(__clang__)
 #    pragma GCC diagnostic pop
 #endif

@@ -26,6 +26,10 @@ namespace alpaka::onHost::example
         ,
         exec::cpuOmpBlocks
 #endif
+#ifndef ALPAKA_DISABLE_EXEC_CpuTbbBlocks
+        ,
+        exec::cpuTbbBlocks
+#endif
 #ifndef ALPAKA_DISABLE_EXEC_CpuSerial
         ,
         exec::cpuSerial
