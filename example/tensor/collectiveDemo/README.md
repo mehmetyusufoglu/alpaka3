@@ -98,3 +98,52 @@ export NCCL_P2P_LEVEL=NVL
 export OMPI_MCA_btl=^openib
 export OMPI_MCA_pml=ucx
 export OMPI_MCA_osc=ucx
+
+
+
+Trouble Shooting
+
+# Check if you still have an allocation
+squeue -u $USER
+
+# If not, get a new one
+salloc -N2 -n4 --partition=casus_a100 --time=00:30:00
+
+# Once in allocation, run on compute nodes
+srun -n 1 nvidia-smi -L
+
+#possible answer after salloc
+ srun -n 1 nvidia-smi -L
+srun: Warning: can't run 1 processes on 2 nodes, setting nnodes to 1
+GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-7ac1b215-3501-4e93-836b-e8edd83c18e2)
+GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-889c4ba4-60de-cd0d-a11e-c434a2adb42e)
+
+# Check your allocation details
+scontrol show job $SLURM_JOB_ID
+
+# Check what nodes you have
+srun hostname
+
+# Check if CUDA module needs to be loaded on compute nodes
+srun -n 1 sh -c 'module list 2>&1 | grep -i cuda'
+
+# Try loading CUDA module on compute nodes
+srun -n 1 sh -c 'module load cuda/12.4 && nvidia-smi -L'
+
+# Check the partition
+sinfo -p casus_a100
+
+
+#MPI missing 
+
+module load cuda/12.4 openmpi/4.1.5-cuda12x-gdr gcc/12.2.0
+cmake -S .. -B . -DCMAKE_BUILD_TYPE=Release \
+      -DMPI_C_COMPILER=$(which mpicc) \
+      -DMPI_CXX_COMPILER=$(which mpicxx)
+cmake --build . --target tensorCollectiveDemo -j8
+
+grep MPI_ CMakeCache.txt
+ldd example/tensor/collectiveDemo/tensorCollectiveDemo | grep mpi
+mpirun --oversubscribe -n 4 --map-by ppr:2:node --bind-to none \
+       -x NCCL_ROOT -x LD_LIBRARY_PATH \
+       ./example/tensor/collectiveDemo/tensorCollectiveDemo

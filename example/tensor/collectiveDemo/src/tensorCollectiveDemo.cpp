@@ -17,7 +17,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <span>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -34,12 +36,40 @@ namespace collective = alpaka::tensor::collective;
 
 namespace
 {
+    [[nodiscard]] std::optional<int> parseEnvInt(char const* envName)
+    {
+        if(char const* value = std::getenv(envName))
+        {
+            char* end = nullptr;
+            long parsed = std::strtol(value, &end, 10);
+            if(end != nullptr && end != value && *end == '\0' && parsed >= 0)
+            {
+                return static_cast<int>(parsed);
+            }
+        }
+        return std::nullopt;
+    }
+
+    template<std::size_t N>
+    [[nodiscard]] std::optional<int> parseFirstEnvInt(std::array<char const*, N> const& envNames)
+    {
+        for(auto const* name : envNames)
+        {
+            if(auto parsed = parseEnvInt(name))
+                return parsed;
+        }
+        return std::nullopt;
+    }
+
     struct MultiProcessBootstrap
     {
         bool enabled = false;
         bool finalizeMpi = false;
         int worldRank = 0;
         int worldSize = 1;
+        int localRank = -1;
+        int localSize = -1;
+        std::string disableReason{};
         std::vector<std::byte> uniqueId{};
     };
 
@@ -48,17 +78,66 @@ namespace
     {
         MultiProcessBootstrap bootstrap{};
         int initialized = 0;
-        MPI_Initialized(&initialized);
+        auto const initQueryStatus = MPI_Initialized(&initialized);
+        if(initQueryStatus != MPI_SUCCESS)
+        {
+            bootstrap.disableReason = "MPI_Initialized failed with status=" + std::to_string(initQueryStatus);
+            return bootstrap;
+        }
+
         if(!initialized)
         {
             int provided = MPI_THREAD_SINGLE;
-            MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+            auto const initStatus = MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+            if(initStatus != MPI_SUCCESS)
+            {
+                bootstrap.disableReason = "MPI_Init_thread failed with status=" + std::to_string(initStatus);
+                return bootstrap;
+            }
             bootstrap.finalizeMpi = true;
         }
 
-        MPI_Comm_size(MPI_COMM_WORLD, &bootstrap.worldSize);
-        MPI_Comm_rank(MPI_COMM_WORLD, &bootstrap.worldRank);
+        auto const commSizeStatus = MPI_Comm_size(MPI_COMM_WORLD, &bootstrap.worldSize);
+        if(commSizeStatus != MPI_SUCCESS)
+        {
+            bootstrap.disableReason = "MPI_Comm_size failed with status=" + std::to_string(commSizeStatus);
+            bootstrap.worldSize = 1;
+        }
+
+        auto const commRankStatus = MPI_Comm_rank(MPI_COMM_WORLD, &bootstrap.worldRank);
+        if(commRankStatus != MPI_SUCCESS)
+        {
+            bootstrap.disableReason = "MPI_Comm_rank failed with status=" + std::to_string(commRankStatus);
+            bootstrap.worldRank = 0;
+        }
         bootstrap.enabled = bootstrap.worldSize > 1;
+
+        if(bootstrap.worldSize > 1)
+        {
+            MPI_Comm localComm = MPI_COMM_NULL;
+            auto const splitStatus = MPI_Comm_split_type(
+                MPI_COMM_WORLD,
+                MPI_COMM_TYPE_SHARED,
+                bootstrap.worldRank,
+                MPI_INFO_NULL,
+                &localComm);
+            if(splitStatus == MPI_SUCCESS && localComm != MPI_COMM_NULL)
+            {
+                MPI_Comm_rank(localComm, &bootstrap.localRank);
+                MPI_Comm_size(localComm, &bootstrap.localSize);
+                MPI_Comm_free(&localComm);
+            }
+            else
+            {
+                bootstrap.localRank = bootstrap.worldRank;
+                bootstrap.localSize = bootstrap.worldSize;
+            }
+        }
+        else
+        {
+            bootstrap.localRank = 0;
+            bootstrap.localSize = 1;
+        }
 
 #    ifdef ALPAKA_HAS_NCCL
         if(bootstrap.enabled)
@@ -72,6 +151,8 @@ namespace
                     std::cerr << "ncclGetUniqueId failed with status=" << static_cast<int>(result)
                               << "; multi-rank NCCL disabled.\n";
                     bootstrap.enabled = false;
+                    bootstrap.disableReason =
+                        "ncclGetUniqueId failed with status=" + std::to_string(static_cast<int>(result));
                 }
             }
 
@@ -81,6 +162,9 @@ namespace
             {
                 std::cerr << "MPI_Bcast failed while distributing NCCL unique ID; multi-rank NCCL disabled.\n";
                 bootstrap.enabled = false;
+                bootstrap.disableReason =
+                    "MPI_Bcast failed while distributing NCCL unique ID (status="
+                    + std::to_string(broadcastResult) + ")";
             }
             int enabledFlag = bootstrap.enabled ? 1 : 0;
             MPI_Bcast(&enabledFlag, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -96,14 +180,59 @@ namespace
                 bootstrap.uniqueId.clear();
             }
         }
+#    else
+        if(bootstrap.enabled)
+        {
+            bootstrap.disableReason = "NCCL support not enabled in this build.";
+            bootstrap.enabled = false;
+            bootstrap.uniqueId.clear();
+        }
 #    endif
+
+        if(bootstrap.worldSize > 1)
+        {
+            int enabledFlag = bootstrap.enabled ? 1 : 0;
+            MPI_Bcast(&enabledFlag, 1, MPI_INT, 0, MPI_COMM_WORLD);
+            bootstrap.enabled = enabledFlag != 0;
+
+            int reasonLength = static_cast<int>(bootstrap.disableReason.size());
+            MPI_Bcast(&reasonLength, 1, MPI_INT, 0, MPI_COMM_WORLD);
+            if(bootstrap.worldRank != 0)
+            {
+                bootstrap.disableReason.resize(static_cast<std::size_t>(reasonLength));
+            }
+            if(reasonLength > 0)
+            {
+                MPI_Bcast(bootstrap.disableReason.data(), reasonLength, MPI_CHAR, 0, MPI_COMM_WORLD);
+            }
+        }
 
         return bootstrap;
     }
 #else
     MultiProcessBootstrap prepareBootstrap(int&, char**&)
     {
-        return {};
+        MultiProcessBootstrap bootstrap{};
+        static constexpr std::array<char const*, 2> worldSizeKeys{"OMPI_COMM_WORLD_SIZE", "WORLD_SIZE"};
+        static constexpr std::array<char const*, 2> worldRankKeys{"OMPI_COMM_WORLD_RANK", "RANK"};
+        static constexpr std::array<char const*, 4> localRankKeys{
+            "OMPI_COMM_WORLD_LOCAL_RANK", "MPI_LOCALRANKID", "SLURM_LOCALID", "LOCAL_RANK"};
+
+        if(auto worldSize = parseFirstEnvInt(worldSizeKeys))
+            bootstrap.worldSize = *worldSize;
+        if(auto worldRank = parseFirstEnvInt(worldRankKeys))
+            bootstrap.worldRank = *worldRank;
+        if(auto localRank = parseFirstEnvInt(localRankKeys))
+            bootstrap.localRank = *localRank;
+        else
+            bootstrap.localRank = bootstrap.worldRank;
+
+        bootstrap.localSize = bootstrap.worldSize;
+        bootstrap.enabled = false;
+        bootstrap.disableReason =
+            "Demo built without MPI support; rebuild with MPI to enable multi-rank collectives.";
+
+        return bootstrap;
     }
 #endif
 
@@ -141,17 +270,28 @@ namespace
             deviceCount = 1; // Defensive: avoid modulo by zero if selector misreports availability.
         }
 
-        int deviceId = 0;
-        if(bootstrap.enabled)
+        auto discoverLocalRank = [&]() -> std::optional<int>
         {
-            if(char const* env = std::getenv("OMPI_COMM_WORLD_LOCAL_RANK"))
+            if(bootstrap.localRank >= 0)
+                return bootstrap.localRank;
+
+            constexpr std::array<char const*, 4> envKeys{ "OMPI_COMM_WORLD_LOCAL_RANK",
+                                                          "MPI_LOCALRANKID",
+                                                          "SLURM_LOCALID",
+                                                          "LOCAL_RANK" };
+            for(auto const* key : envKeys)
             {
-                deviceId = std::atoi(env) % deviceCount;
+                if(auto envRank = parseEnvInt(key))
+                    return envRank;
             }
-            else
-            {
-                deviceId = bootstrap.worldRank % deviceCount;
-            }
+            return std::nullopt;
+        };
+
+        int deviceId = 0;
+        if(deviceCount > 0)
+        {
+            auto const preferredRank = discoverLocalRank().value_or(bootstrap.worldRank);
+            deviceId = preferredRank % deviceCount;
         }
 
         auto device = selector.makeDevice(deviceId);
@@ -168,6 +308,20 @@ namespace
             if(bootstrap.enabled)
             {
                 std::cout << "World size: " << bootstrap.worldSize << '\n';
+                if(bootstrap.localRank >= 0)
+                {
+                    std::cout << "Local size: " << bootstrap.localSize << "\n";
+                }
+            }
+            else if(bootstrap.worldSize > 1)
+            {
+                std::cout << "MPI detected " << bootstrap.worldSize
+                          << " ranks but collectives stayed single-rank";
+                if(!bootstrap.disableReason.empty())
+                {
+                    std::cout << " (" << bootstrap.disableReason << ")";
+                }
+                std::cout << "\n";
             }
         }
 
@@ -183,6 +337,11 @@ namespace
         if constexpr(std::is_same_v<Exec, alpaka::exec::GpuCuda>)
         {
             auto context = tt::createCleanTensorOpContext(exec, device, queue);
+
+            if(bootstrap.enabled)
+            {
+                std::cout << "Rank " << bootstrap.worldRank << " using device " << deviceId << '\n';
+            }
 
             collective::GroupConfig groupConfig{};
             groupConfig.deviceIds.push_back(deviceId);
