@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <span>
@@ -134,7 +135,26 @@ namespace
             return 0;
         }
 
-        auto device = selector.makeDevice(0);
+        int deviceCount = selector.getDeviceCount();
+        if(deviceCount <= 0)
+        {
+            deviceCount = 1; // Defensive: avoid modulo by zero if selector misreports availability.
+        }
+
+        int deviceId = 0;
+        if(bootstrap.enabled)
+        {
+            if(char const* env = std::getenv("OMPI_COMM_WORLD_LOCAL_RANK"))
+            {
+                deviceId = std::atoi(env) % deviceCount;
+            }
+            else
+            {
+                deviceId = bootstrap.worldRank % deviceCount;
+            }
+        }
+
+        auto device = selector.makeDevice(deviceId);
         auto queue = device.makeQueue();
 
         using Device = decltype(device);
@@ -165,7 +185,7 @@ namespace
             auto context = tt::createCleanTensorOpContext(exec, device, queue);
 
             collective::GroupConfig groupConfig{};
-            groupConfig.deviceIds.push_back(0); // assumes CUDA_VISIBLE_DEVICES pins ranks appropriately
+            groupConfig.deviceIds.push_back(deviceId);
             if(bootstrap.enabled)
             {
                 groupConfig.multiProcess = true;
@@ -267,3 +287,5 @@ int main(int argc, char** argv)
     finalizeBootstrap(bootstrap);
     return result;
 }
+
+
