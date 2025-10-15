@@ -173,10 +173,10 @@ namespace alpaka::onHost
         };
 #endif
 #if ALPAKA_TBB
-    template<typename T_Platform>
-    struct IsExecutorSupportedBy::Op<exec::CpuTbbBlocks, cpu::Device<T_Platform>> : std::true_type
-    {
-    };
+        template<typename T_Platform>
+        struct IsExecutorSupportedBy::Op<exec::CpuTbbBlocks, cpu::Device<T_Platform>> : std::true_type
+        {
+        };
 #endif
     } // namespace trait
 

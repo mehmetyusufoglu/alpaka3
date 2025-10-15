@@ -30,8 +30,7 @@ namespace alpaka::onHost
         {
             using NumThreadsVecType = typename T_ThreadSpec::NumThreadsVecType;
 
-            constexpr TbbBlocks(T_ThreadSpec threadBlocking)
-                : m_threadBlocking(std::move(threadBlocking))
+            constexpr TbbBlocks(T_ThreadSpec threadBlocking) : m_threadBlocking(std::move(threadBlocking))
             {
             }
 
@@ -41,9 +40,8 @@ namespace alpaka::onHost
                     throw std::runtime_error("Thread block extent must be 1.");
 
                 auto const blockCount = m_threadBlocking.m_numBlocks;
-                constexpr uint32_t simdWidth = alpaka::getArchSimdWidth<uint8_t>(
-                    api::host,
-                    ALPAKA_TYPEOF(dict[object::deviceKind]){});
+                constexpr uint32_t simdWidth
+                    = alpaka::getArchSimdWidth<uint8_t>(api::host, ALPAKA_TYPEOF(dict[object::deviceKind]){});
                 using SharedStorage = onAcc::cpu::SingleThreadStaticShared<simdWidth>;
 
                 oneapi::tbb::enumerable_thread_specific<SharedStorage> sharedMemTLS;
@@ -65,10 +63,8 @@ namespace alpaka::onHost
                         auto const blockSharedMemEntry = DictEntry{layer::shared, std::ref(blockSharedMem)};
                         auto const blockSyncEntry = DictEntry{action::threadBlockSync, onAcc::cpu::NoOp{}};
 
-                        uint32_t blockDynSharedMemBytes = onHost::getDynSharedMemBytes(
-                            exec::CpuTbbBlocks{},
-                            m_threadBlocking,
-                            kernelBundle);
+                        uint32_t blockDynSharedMemBytes
+                            = onHost::getDynSharedMemBytes(exec::CpuTbbBlocks{}, m_threadBlocking, kernelBundle);
                         auto const blockDynSharedMemEntry = DictEntry{layer::dynShared, std::ref(blockSharedMem)};
                         auto const blockDynSharedMemBytesEntry
                             = DictEntry{object::dynSharedMemBytes, std::ref(blockDynSharedMemBytes)};
@@ -109,6 +105,6 @@ namespace alpaka::onHost
 {
     template<typename T_ThreadSpec>
     auto makeAcc(exec::CpuTbbBlocks, T_ThreadSpec const&) = delete;
-}
+} // namespace alpaka::onHost
 
 #endif

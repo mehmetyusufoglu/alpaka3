@@ -84,7 +84,7 @@ namespace alpaka::onHost
                         blockSharedMem.reset();
                     }
                 }
-            }
+        
 
             T_ThreadSpec m_threadBlocking;
         };
