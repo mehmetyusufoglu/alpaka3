@@ -84,16 +84,19 @@ namespace alpaka::onHost
                         blockSharedMem.reset();
                     }
                 }
-        
 
-            T_ThreadSpec m_threadBlocking;
-        };
-    } // namespace cpu
 
-    inline auto makeAcc(exec::CpuOmpBlocks, auto const& threadBlocking)
-    {
-        return cpu::OmpBlocks(threadBlocking);
-    }
-} // namespace alpaka::onHost
+                T_ThreadSpec m_threadBlocking;
+            };
+
+        } // namespace cpu
+
+        inline auto
+        makeAcc(exec::CpuOmpBlocks, auto const& threadBlocking)
+
+        {
+            return cpu::OmpBlocks(threadBlocking);
+        }
+    } // namespace alpaka::onHost
 
 #endif

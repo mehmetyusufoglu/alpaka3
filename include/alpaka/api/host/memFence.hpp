@@ -47,6 +47,7 @@ namespace alpaka::onAcc::internalCompute
             // Block scope: NO-OP for OMP since single-threaded within a block
         }
 
+        // TBB doesn’t have a separate “thread fence”.
         inline void hostMemoryFenceImpl(exec::CpuOmpBlocks const&, scope::Device const)
         {
             std::atomic_thread_fence(std::memory_order_acq_rel);
