@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: MPL-2.0 */
+/* Copyright 2024 Mehmet Yusufoglu, René Widera
+ * SPDX-License-Identifier: MPL-2.0
+ */
 
 #pragma once
 
