@@ -29,8 +29,8 @@
 #include "alpaka/onAcc/Acc.hpp"
 #include "alpaka/onAcc/GlobalMem.hpp"
 #include "alpaka/onAcc/SimdAlgo.hpp"
-#include "alpaka/onAcc/atomic.hpp"
 #include "alpaka/onAcc/Warp.hpp"
+#include "alpaka/onAcc/atomic.hpp"
 #include "alpaka/onAcc/interface.hpp"
 #include "alpaka/onAcc/memFence.hpp"
 #include "alpaka/onAcc/tag.hpp"
@@ -48,9 +48,11 @@
 #include "alpaka/onHost/logger/logger.hpp"
 #include "alpaka/onHost/mem/stdContainer.hpp"
 #include "alpaka/tag.hpp"
-#include "alpaka/warp/Traits.hpp"
-#include "alpaka/warp/SingleThread.hpp"
 #include "alpaka/utility.hpp"
+#include "alpaka/warp/GenericSycl.hpp"
+#include "alpaka/warp/SingleThread.hpp"
+#include "alpaka/warp/Traits.hpp"
+#include "alpaka/warp/UniformCudaHipBuiltIn.hpp"
 
 /** main alpaka namespace.
  *

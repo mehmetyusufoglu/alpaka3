@@ -1,4 +1,4 @@
-/* Copyright 2025 René Widera
+/* Copyright 2025 Mehmet Yusufoglu, René Widera
  * SPDX-License-Identifier: MPL-2.0
  */
 
@@ -28,6 +28,66 @@ namespace alpaka::onAcc::warp
             auto const linear = linearize(threadCount, threadIdx);
             return static_cast<uint32_t>(linear);
         }
+
+        template<typename T_Api, typename T_DeviceKind>
+        struct WarpFacade
+        {
+            T_Api api;
+            T_DeviceKind device;
+            std::uint32_t width;
+
+            ALPAKA_FN_HOST_ACC constexpr std::uint32_t size() const
+            {
+                return width;
+            }
+
+            ALPAKA_FN_HOST_ACC constexpr std::uint64_t activemask() const
+            {
+                return alpaka::warp::activemask(api, device);
+            }
+
+            template<typename Predicate>
+            ALPAKA_FN_HOST_ACC constexpr bool all(Predicate const& predicate) const
+            {
+                return alpaka::warp::all(api, device, predicate);
+            }
+
+            template<typename Predicate>
+            ALPAKA_FN_HOST_ACC constexpr bool any(Predicate const& predicate) const
+            {
+                return alpaka::warp::any(api, device, predicate);
+            }
+
+            template<typename Predicate>
+            ALPAKA_FN_HOST_ACC constexpr std::uint64_t ballot(Predicate const& predicate) const
+            {
+                return alpaka::warp::ballot(api, device, predicate);
+            }
+
+            template<typename T_Value>
+            ALPAKA_FN_HOST_ACC constexpr T_Value shfl(T_Value const& value, std::uint32_t srcLane) const
+            {
+                return alpaka::warp::shfl(api, device, value, srcLane, width);
+            }
+
+            template<typename T_Value>
+            ALPAKA_FN_HOST_ACC constexpr T_Value shflDown(T_Value const& value, std::uint32_t delta) const
+            {
+                return alpaka::warp::shflDown(api, device, value, delta, width);
+            }
+
+            template<typename T_Value>
+            ALPAKA_FN_HOST_ACC constexpr T_Value shflUp(T_Value const& value, std::uint32_t delta) const
+            {
+                return alpaka::warp::shflUp(api, device, value, delta, width);
+            }
+
+            template<typename T_Value>
+            ALPAKA_FN_HOST_ACC constexpr T_Value shflXor(T_Value const& value, std::uint32_t laneMask) const
+            {
+                return alpaka::warp::shflXor(api, device, value, laneMask, width);
+            }
+        };
     } // namespace detail
 
     /** Return the number of lanes participating in a warp. */
@@ -69,5 +129,120 @@ namespace alpaka::onAcc::warp
         return getLaneIdx(acc) == 0u;
     }
 
-} // namespace alpaka::onAcc::warp
+    /** Return the bit-mask of active lanes for the warp associated with the accelerator. */
+    ALPAKA_FN_HOST_ACC constexpr std::uint64_t activemask(concepts::Acc auto const& acc)
+    {
+        return alpaka::warp::activemask(acc.getApi(), acc.getDeviceKind());
+    }
 
+    /** True if all active lanes satisfy the predicate. */
+    template<typename Predicate>
+    ALPAKA_FN_HOST_ACC constexpr bool all(concepts::Acc auto const& acc, Predicate const& predicate)
+    {
+        return alpaka::warp::all(acc.getApi(), acc.getDeviceKind(), predicate);
+    }
+
+    /** True if any active lane satisfies the predicate. */
+    template<typename Predicate>
+    ALPAKA_FN_HOST_ACC constexpr bool any(concepts::Acc auto const& acc, Predicate const& predicate)
+    {
+        return alpaka::warp::any(acc.getApi(), acc.getDeviceKind(), predicate);
+    }
+
+    /** Bit-mask of lanes where the predicate evaluates to true. */
+    template<typename Predicate>
+    ALPAKA_FN_HOST_ACC constexpr std::uint64_t ballot(concepts::Acc auto const& acc, Predicate const& predicate)
+    {
+        return alpaka::warp::ballot(acc.getApi(), acc.getDeviceKind(), predicate);
+    }
+
+    /** Broadcast the value from a specific source lane using the current warp width. */
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shfl(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t srcLane,
+        std::uint32_t width)
+    {
+        return alpaka::warp::shfl(acc.getApi(), acc.getDeviceKind(), value, srcLane, width);
+    }
+
+    /** Broadcast the value from a specific source lane using the configured warp size. */
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shfl(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t srcLane)
+    {
+        return shfl(acc, value, srcLane, getSize(acc));
+    }
+
+    /** Shift values toward higher lane indices. */
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shflDown(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t delta,
+        std::uint32_t width)
+    {
+        return alpaka::warp::shflDown(acc.getApi(), acc.getDeviceKind(), value, delta, width);
+    }
+
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shflDown(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t delta)
+    {
+        return shflDown(acc, value, delta, getSize(acc));
+    }
+
+    /** Shift values toward lower lane indices. */
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shflUp(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t delta,
+        std::uint32_t width)
+    {
+        return alpaka::warp::shflUp(acc.getApi(), acc.getDeviceKind(), value, delta, width);
+    }
+
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shflUp(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t delta)
+    {
+        return shflUp(acc, value, delta, getSize(acc));
+    }
+
+    /** Exchange values according to an XOR mask. */
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shflXor(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t laneMask,
+        std::uint32_t width)
+    {
+        return alpaka::warp::shflXor(acc.getApi(), acc.getDeviceKind(), value, laneMask, width);
+    }
+
+    template<typename T_Value>
+    ALPAKA_FN_HOST_ACC constexpr T_Value shflXor(
+        concepts::Acc auto const& acc,
+        T_Value const& value,
+        std::uint32_t laneMask)
+    {
+        return shflXor(acc, value, laneMask, getSize(acc));
+    }
+
+    /** Factory returning a lightweight warp helper bound to the accelerator. */
+    ALPAKA_FN_HOST_ACC constexpr auto make(concepts::Acc auto const& acc)
+    {
+        using ApiTag = ALPAKA_TYPEOF(acc.getApi());
+        using DeviceTag = ALPAKA_TYPEOF(acc.getDeviceKind());
+        return detail::WarpFacade<ApiTag, DeviceTag>{acc.getApi(), acc.getDeviceKind(), getSize(acc)};
+    }
+
+} // namespace alpaka::onAcc::warp

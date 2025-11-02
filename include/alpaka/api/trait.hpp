@@ -173,9 +173,7 @@ namespace alpaka
     }
 
     /** Get the number of threads grouped into a warp (lock-step execution group). */
-    consteval uint32_t getWarpSize(
-        concepts::Api auto const api,
-        alpaka::concepts::DeviceKind auto const deviceType)
+    consteval uint32_t getWarpSize(concepts::Api auto const api, alpaka::concepts::DeviceKind auto const deviceType)
     {
         return trait::GetWarpSize::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(deviceType)>{}(api, deviceType);
     }

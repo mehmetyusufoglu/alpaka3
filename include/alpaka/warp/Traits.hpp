@@ -5,9 +5,9 @@
 #pragma once
 
 #include "alpaka/api/concepts/api.hpp"
+#include "alpaka/api/trait.hpp"
 #include "alpaka/core/common.hpp"
 #include "alpaka/tag.hpp"
-#include "alpaka/api/trait.hpp"
 
 #include <cstdint>
 
@@ -36,7 +36,9 @@ namespace alpaka::warp
             {
                 ALPAKA_FN_HOST_ACC constexpr std::uint64_t operator()(T_Api const, T_DeviceKind const) const
                 {
-                    static_assert(sizeof(T_Api) && false, "Missing warp Activemask implementation for API/device pair.");
+                    static_assert(
+                        sizeof(T_Api) && false,
+                        "Missing warp Activemask implementation for API/device pair.");
                     return 0u;
                 }
             };
@@ -79,8 +81,10 @@ namespace alpaka::warp
             struct Op
             {
                 template<typename T_Predicate>
-                ALPAKA_FN_HOST_ACC constexpr std::uint64_t
-                operator()(T_Api const, T_DeviceKind const, T_Predicate const&) const
+                ALPAKA_FN_HOST_ACC constexpr std::uint64_t operator()(
+                    T_Api const,
+                    T_DeviceKind const,
+                    T_Predicate const&) const
                 {
                     static_assert(sizeof(T_Api) && false, "Missing warp Ballot implementation for API/device pair.");
                     return 0u;
@@ -217,7 +221,12 @@ namespace alpaka::warp
         std::uint32_t srcLane,
         std::uint32_t width)
     {
-        return trait::Shfl::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(api, device, value, srcLane, width);
+        return trait::Shfl::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(
+            api,
+            device,
+            value,
+            srcLane,
+            width);
     }
 
     /** Shift values toward higher lane indices. */
@@ -229,7 +238,12 @@ namespace alpaka::warp
         std::uint32_t delta,
         std::uint32_t width)
     {
-        return trait::ShflDown::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(api, device, value, delta, width);
+        return trait::ShflDown::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(
+            api,
+            device,
+            value,
+            delta,
+            width);
     }
 
     /** Shift values toward lower lane indices. */
@@ -241,7 +255,12 @@ namespace alpaka::warp
         std::uint32_t delta,
         std::uint32_t width)
     {
-        return trait::ShflUp::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(api, device, value, delta, width);
+        return trait::ShflUp::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(
+            api,
+            device,
+            value,
+            delta,
+            width);
     }
 
     /** Exchange values based on an XOR lane mask. */
@@ -253,6 +272,11 @@ namespace alpaka::warp
         std::uint32_t laneMask,
         std::uint32_t width)
     {
-        return trait::ShflXor::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(api, device, value, laneMask, width);
+        return trait::ShflXor::Op<ALPAKA_TYPEOF(api), ALPAKA_TYPEOF(device), T_Value>{}(
+            api,
+            device,
+            value,
+            laneMask,
+            width);
     }
 } // namespace alpaka::warp
