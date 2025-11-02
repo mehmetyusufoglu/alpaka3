@@ -8,6 +8,7 @@
 #include "alpaka/interface.hpp"
 #include "alpaka/onAcc/Acc.hpp"
 #include "alpaka/tag.hpp"
+#include "alpaka/warp/Traits.hpp"
 
 #include <cstdint>
 
@@ -18,7 +19,7 @@ namespace alpaka::onAcc::warp
         template<concepts::Acc T_Acc>
         ALPAKA_FN_HOST_ACC constexpr uint32_t warpSize(T_Acc const& acc)
         {
-            return alpaka::getWarpSize(ALPAKA_TYPEOF(acc.getApi()){}, ALPAKA_TYPEOF(acc.getDeviceKind()){});
+            return alpaka::warp::getSize(ALPAKA_TYPEOF(acc.getApi()){}, ALPAKA_TYPEOF(acc.getDeviceKind()){});
         }
 
         template<typename T_CountVec, typename T_IdxVec>

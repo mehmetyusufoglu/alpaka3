@@ -1,4 +1,4 @@
-/* Copyright 2024 René Widera
+/* Copyright 2024 René Widera, Mehmet Yusufoglu
  * SPDX-License-Identifier: MPL-2.0
  */
 
@@ -48,6 +48,8 @@
 #include "alpaka/onHost/logger/logger.hpp"
 #include "alpaka/onHost/mem/stdContainer.hpp"
 #include "alpaka/tag.hpp"
+#include "alpaka/warp/Traits.hpp"
+#include "alpaka/warp/SingleThread.hpp"
 #include "alpaka/utility.hpp"
 
 /** main alpaka namespace.
