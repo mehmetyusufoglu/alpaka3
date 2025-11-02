@@ -30,6 +30,7 @@
 #include "alpaka/onAcc/GlobalMem.hpp"
 #include "alpaka/onAcc/SimdAlgo.hpp"
 #include "alpaka/onAcc/atomic.hpp"
+#include "alpaka/onAcc/Warp.hpp"
 #include "alpaka/onAcc/interface.hpp"
 #include "alpaka/onAcc/memFence.hpp"
 #include "alpaka/onAcc/tag.hpp"

@@ -1,4 +1,4 @@
-/* Copyright 2024 René Widera
+/* Copyright 2024 René Widera, Mehmet Yusufoglu
  * SPDX-License-Identifier: MPL-2.0
  */
 
@@ -96,6 +96,15 @@ namespace alpaka
             {
                 // loading 16 byte per thread will result in optimal memory bandwith
                 return 16u;
+            }
+        };
+
+        template<>
+        struct GetWarpSize::Op<api::Cuda, deviceKind::NvidiaGpu>
+        {
+            consteval uint32_t operator()(api::Cuda const, deviceKind::NvidiaGpu const) const
+            {
+                return 32u;
             }
         };
     } // namespace trait

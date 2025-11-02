@@ -1,4 +1,4 @@
-/* Copyright 2024 René Widera
+/* Copyright 2024 René Widera, Mehmet Yusufoglu
  * SPDX-License-Identifier: MPL-2.0
  */
 
@@ -90,6 +90,12 @@ namespace alpaka
     constexpr uint32_t getNumPipelines(auto&& any)
     {
         return alpaka::getNumPipelines(ALPAKA_TYPEOF(getApi(any)){}, ALPAKA_TYPEOF(getDeviceKind(any)){});
+    }
+
+    /** Get the warp size (number of lock-step lanes) for the object. */
+    constexpr uint32_t getWarpSize(auto&& any)
+    {
+        return alpaka::getWarpSize(ALPAKA_TYPEOF(getApi(any)){}, ALPAKA_TYPEOF(getDeviceKind(any)){});
     }
 
     /** Get the value type alignment of an object
