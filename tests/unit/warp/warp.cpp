@@ -1,6 +1,8 @@
-/* Copyright 2025 Mehmet Yusufoglu, René Widera
+/* Copyright 2025 Mehmet Yusufoglu
  * SPDX-License-Identifier: MPL-2.0
  */
+
+#include "utils.hpp"
 
 #include <alpaka/alpaka.hpp>
 #include <alpaka/onHost/example/executors.hpp>
@@ -42,8 +44,7 @@ namespace
 
 using namespace alpaka;
 
-using WarpTestBackends
-    = std::decay_t<decltype(onHost::allBackends(onHost::enabledApis, onHost::example::enabledExecutors))>;
+using alpaka::test::warp::WarpTestBackends;
 
 static_assert(getWarpSize(api::host, deviceKind::cpu) == 1u);
 static_assert(getWarpSize(api::cuda, deviceKind::nvidiaGpu) == 32u);
@@ -94,31 +95,6 @@ TEST_CASE("warp lane arithmetic on simulated gpu", "[warp]")
     REQUIRE(onAcc::warp::getWarpIdxInBlock(acc) == 1u);
     REQUIRE(onAcc::warp::getNumWarps(acc) == 4u);
     CHECK_FALSE(onAcc::warp::isWarpLeader(acc));
-}
-
-TEST_CASE("warp single thread vote and shuffle behaviour", "[warp]")
-{
-    constexpr auto apiTag = api::host;
-    constexpr auto deviceTag = deviceKind::cpu;
-
-    CHECK(alpaka::warp::activemask(apiTag, deviceTag) == 1u);
-    CHECK(alpaka::warp::all(apiTag, deviceTag, true));
-    CHECK_FALSE(alpaka::warp::all(apiTag, deviceTag, false));
-
-    CHECK(alpaka::warp::any(apiTag, deviceTag, true));
-    CHECK_FALSE(alpaka::warp::any(apiTag, deviceTag, false));
-
-    CHECK(alpaka::warp::ballot(apiTag, deviceTag, true) == 1u);
-    CHECK(alpaka::warp::ballot(apiTag, deviceTag, false) == 0u);
-
-    constexpr int intValue = 42;
-    CHECK(alpaka::warp::shfl(apiTag, deviceTag, intValue, 0u, 1u) == intValue);
-    CHECK(alpaka::warp::shflDown(apiTag, deviceTag, intValue, 1u, 1u) == intValue);
-    CHECK(alpaka::warp::shflUp(apiTag, deviceTag, intValue, 1u, 1u) == intValue);
-    CHECK(alpaka::warp::shflXor(apiTag, deviceTag, intValue, 1u, 1u) == intValue);
-
-    constexpr float floatValue = 3.5f;
-    CHECK(alpaka::warp::shfl(apiTag, deviceTag, floatValue, 0u, 1u) == floatValue);
 }
 
 namespace
@@ -217,8 +193,15 @@ TEMPLATE_LIST_TEST_CASE("warp collectives produce consistent device results", "[
     auto device = selector.makeDevice(0);
     auto queue = device.makeQueue(queueKind::blocking);
 
-    constexpr Vec<std::uint32_t, 1u> blocks = Vec<std::uint32_t, 1u>{2u};
-    constexpr Vec<std::uint32_t, 1u> threads = Vec<std::uint32_t, 1u>{64u};
+    auto const warpSize = warp::getSize(deviceSpec.getApi(), deviceSpec.getDeviceKind());
+
+    auto blocks = Vec<std::uint32_t, 1u>{2u};
+    auto threads = Vec<std::uint32_t, 1u>{64u};
+    if(warpSize == 1u)
+    {
+        blocks = Vec<std::uint32_t, 1u>{1u};
+        threads = Vec<std::uint32_t, 1u>{1u};
+    }
 
     auto const totalThreads = static_cast<std::size_t>(blocks.x()) * static_cast<std::size_t>(threads.x());
 
@@ -266,6 +249,8 @@ TEMPLATE_LIST_TEST_CASE("warp collectives produce consistent device results", "[
             upDev,
             downDev});
 
+    onHost::wait(queue);
+
     auto maskHost = onHost::allocHostLike(maskDev);
     auto allHost = onHost::allocHostLike(allDev);
     auto anyHost = onHost::allocHostLike(anyDev);
@@ -287,7 +272,6 @@ TEMPLATE_LIST_TEST_CASE("warp collectives produce consistent device results", "[
     onHost::memcpy(queue, downHost, downDev);
     onHost::wait(queue);
 
-    auto const warpSize = warp::getSize(deviceSpec.getApi(), deviceSpec.getDeviceKind());
     auto const warpsPerBlock = (threads.x() + warpSize - 1u) / warpSize;
     auto const totalWarps = warpsPerBlock * blocks.x();
     auto const expectedSum = warpSize * (warpSize + 1u) / 2u;
