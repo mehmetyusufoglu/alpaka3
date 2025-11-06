@@ -1,8 +1,12 @@
-// Demo overview:
-// - Shows how to instantiate a CleanTensorOpContext with collective support.
-// - Configures a single-rank NCCL communicator targeting the first CUDA device.
-// - Performs an in-place all-reduce to validate the NCCL provider wiring.
-// - Falls back gracefully when CUDA or NCCL is unavailable on the current backend.
+/**
+ * Tensor Collective Demo
+ * ----------------------
+ * This executable exercises Alpaka's tensor collective provider across multiple backends.
+ * It constructs a CleanTensorOpContext, optionally bootstraps multi-process NCCL state via MPI,
+ * maps MPI ranks to CUDA devices, performs an in-place all-reduce, and prints the per-rank result.
+ * The program is defensive: it checks for missing MPI, NCCL, or CUDA support and falls back to
+ * single-rank execution while printing diagnostics explaining why collectives were skipped.
+ */
 #include <alpaka/alpaka.hpp>
 #include <alpaka/onHost/example/executors.hpp>
 #include <alpaka/onHost/executeForEach.hpp>
@@ -36,6 +40,11 @@ namespace collective = alpaka::tensor::collective;
 
 namespace
 {
+    /**
+     * Attempts to parse a non-negative integer from the given environment variable. This is used as
+     * a fallback when we try to infer rank information without calling into MPI (e.g., when running
+     * under `mpirun` but compiling the demo without MPI support).
+     */
     [[nodiscard]] std::optional<int> parseEnvInt(char const* envName)
     {
         if(char const* value = std::getenv(envName))
@@ -50,6 +59,10 @@ namespace
         return std::nullopt;
     }
 
+    /**
+     * Walk the supplied list of environment variables and return the first successfully parsed
+     * integer. This lets us support launchers that expose different naming conventions for rank IDs.
+     */
     template<std::size_t N>
     [[nodiscard]] std::optional<int> parseFirstEnvInt(std::array<char const*, N> const& envNames)
     {
@@ -61,6 +74,11 @@ namespace
         return std::nullopt;
     }
 
+    /**
+     * Aggregates the metadata required to bridge the MPI bootstrapping phase with the NCCL
+     * collective configuration. MPI fills in world/local rank counts and, when NCCL is available,
+     * ferries a provider-specific unique identifier that lets every process join the same communicator.
+     */
     struct MultiProcessBootstrap
     {
         bool enabled = false;
@@ -74,6 +92,11 @@ namespace
     };
 
 #ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
+    /**
+     * Initialise MPI (if needed), gather world/local topology, and broadcast the NCCL rendezvous
+     * token. Everything in this routine is pure MPI; once the structure is populated the rest of
+     * the program can configure NCCL without making additional MPI calls.
+     */
     MultiProcessBootstrap prepareBootstrap(int& argc, char**& argv)
     {
         MultiProcessBootstrap bootstrap{};
@@ -151,8 +174,8 @@ namespace
                     std::cerr << "ncclGetUniqueId failed with status=" << static_cast<int>(result)
                               << "; multi-rank NCCL disabled.\n";
                     bootstrap.enabled = false;
-                    bootstrap.disableReason =
-                        "ncclGetUniqueId failed with status=" + std::to_string(static_cast<int>(result));
+                    bootstrap.disableReason
+                        = "ncclGetUniqueId failed with status=" + std::to_string(static_cast<int>(result));
                 }
             }
 
@@ -162,9 +185,8 @@ namespace
             {
                 std::cerr << "MPI_Bcast failed while distributing NCCL unique ID; multi-rank NCCL disabled.\n";
                 bootstrap.enabled = false;
-                bootstrap.disableReason =
-                    "MPI_Bcast failed while distributing NCCL unique ID (status="
-                    + std::to_string(broadcastResult) + ")";
+                bootstrap.disableReason = "MPI_Bcast failed while distributing NCCL unique ID (status="
+                                          + std::to_string(broadcastResult) + ")";
             }
             int enabledFlag = bootstrap.enabled ? 1 : 0;
             MPI_Bcast(&enabledFlag, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -210,13 +232,21 @@ namespace
         return bootstrap;
     }
 #else
+    /**
+     * Minimal bootstrap when MPI support is compiled out. We still try to honour environment
+     * variables set by launchers so the demo can emit helpful diagnostics and operate in
+     * single-process mode.
+     */
     MultiProcessBootstrap prepareBootstrap(int&, char**&)
     {
         MultiProcessBootstrap bootstrap{};
         static constexpr std::array<char const*, 2> worldSizeKeys{"OMPI_COMM_WORLD_SIZE", "WORLD_SIZE"};
         static constexpr std::array<char const*, 2> worldRankKeys{"OMPI_COMM_WORLD_RANK", "RANK"};
         static constexpr std::array<char const*, 4> localRankKeys{
-            "OMPI_COMM_WORLD_LOCAL_RANK", "MPI_LOCALRANKID", "SLURM_LOCALID", "LOCAL_RANK"};
+            "OMPI_COMM_WORLD_LOCAL_RANK",
+            "MPI_LOCALRANKID",
+            "SLURM_LOCALID",
+            "LOCAL_RANK"};
 
         if(auto worldSize = parseFirstEnvInt(worldSizeKeys))
             bootstrap.worldSize = *worldSize;
@@ -229,8 +259,7 @@ namespace
 
         bootstrap.localSize = bootstrap.worldSize;
         bootstrap.enabled = false;
-        bootstrap.disableReason =
-            "Demo built without MPI support; rebuild with MPI to enable multi-rank collectives.";
+        bootstrap.disableReason = "Demo built without MPI support; rebuild with MPI to enable multi-rank collectives.";
 
         return bootstrap;
     }
@@ -249,6 +278,11 @@ namespace
 #endif
     }
 
+    /**
+     * Execute the demo for a single backend/executor pair. Device discovery and rank-to-device
+     * mapping happen first. Once the `GroupConfig` is prepared we ask Alpaka to configure NCCL using
+     * the metadata gathered during bootstrap, at which point MPI's role is complete.
+     */
     template<typename Tag>
     int runCollectiveDemo(Tag const& tag, MultiProcessBootstrap const& bootstrap)
     {
@@ -275,10 +309,11 @@ namespace
             if(bootstrap.localRank >= 0)
                 return bootstrap.localRank;
 
-            constexpr std::array<char const*, 4> envKeys{ "OMPI_COMM_WORLD_LOCAL_RANK",
-                                                          "MPI_LOCALRANKID",
-                                                          "SLURM_LOCALID",
-                                                          "LOCAL_RANK" };
+            constexpr std::array<char const*, 4> envKeys{
+                "OMPI_COMM_WORLD_LOCAL_RANK",
+                "MPI_LOCALRANKID",
+                "SLURM_LOCALID",
+                "LOCAL_RANK"};
             for(auto const* key : envKeys)
             {
                 if(auto envRank = parseEnvInt(key))
@@ -315,8 +350,7 @@ namespace
             }
             else if(bootstrap.worldSize > 1)
             {
-                std::cout << "MPI detected " << bootstrap.worldSize
-                          << " ranks but collectives stayed single-rank";
+                std::cout << "MPI detected " << bootstrap.worldSize << " ranks but collectives stayed single-rank";
                 if(!bootstrap.disableReason.empty())
                 {
                     std::cout << " (" << bootstrap.disableReason << ")";
@@ -343,6 +377,7 @@ namespace
                 std::cout << "Rank " << bootstrap.worldRank << " using device " << deviceId << '\n';
             }
 
+            // Feed NCCL the communicator layout discovered during the bootstrap phase.
             collective::GroupConfig groupConfig{};
             groupConfig.deviceIds.push_back(deviceId);
             if(bootstrap.enabled)
@@ -384,6 +419,7 @@ namespace
             std::array<void*, 1> recvPtrs{static_cast<void*>(deviceValues)};
             std::array<void*, 1> streamPtrs{reinterpret_cast<void*>(alpaka::onHost::getNativeHandle(queue))};
 
+            // Describe the device pointers/streams NCCL should operate on for this rank.
             collective::MultiDeviceBuffers buffers{};
             buffers.recv = std::span<void*>{recvPtrs};
             buffers.streams = std::span<void*>{streamPtrs};
@@ -395,7 +431,9 @@ namespace
             request.dataType = collective::DataType::Float32;
             request.reduceOp = collective::ReduceOp::Sum;
 
+            // NCCL performs the all-reduce: each element is summed across ranks and the result is broadcast back.
             auto const reduceStatus = context.collectiveAllReduce(request);
+
             if(reduceStatus != tt::OpStatus::Success)
             {
                 if(!bootstrap.enabled || bootstrap.worldRank == 0)
@@ -446,5 +484,3 @@ int main(int argc, char** argv)
     finalizeBootstrap(bootstrap);
     return result;
 }
-
-
