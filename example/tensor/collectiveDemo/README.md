@@ -95,7 +95,8 @@ export NCCL_IB_DISABLE=0
 export NCCL_NET_GDR_LEVEL=5
 export NCCL_P2P_LEVEL=NVL
 
-# MPI settings
+# MPI settings  
+# THESE ARE IMPORTANT DONT FORGET!!!!!!!!!!!!!!!!!!
 export OMPI_MCA_btl=^openib
 export OMPI_MCA_pml=ucx
 export OMPI_MCA_osc=ucx
@@ -137,14 +138,18 @@ sinfo -p casus_a100
 
 #MPI missing 
 
-module load cuda/12.4 openmpi/4.1.5-cuda12x-gdr gcc/12.2.0
-cmake -S .. -B . -DCMAKE_BUILD_TYPE=Release \
+module load gcc/12.2.0 cuda/12.4 nvidia/24.3 openmpi/4.1.5-cuda12x-gdr
+export NCCL_ROOT=$NVHPC/Linux_x86_64/24.3/comm_libs/nccl
+export CMAKE_PREFIX_PATH=$NCCL_ROOT:$CMAKE_PREFIX_PATH
+cmake -S . -B build \
+      -Dalpaka_ENABLE_COLLECTIVES=ON \
+      -Dalpaka_ENABLE_NCCL=ON \
       -DMPI_C_COMPILER=$(which mpicc) \
       -DMPI_CXX_COMPILER=$(which mpicxx)
-cmake --build . --target tensorCollectiveDemo -j8
+cmake --build build --target tensorCollectiveDemo -j8
 
 grep MPI_ CMakeCache.txt
-ldd example/tensor/collectiveDemo/tensorCollectiveDemo | grep mpi
+ldd build/example/tensor/collectiveDemo/tensorCollectiveDemo | grep mpi
 mpirun --oversubscribe -n 4 --map-by ppr:2:node --bind-to none \
        -x NCCL_ROOT -x LD_LIBRARY_PATH \
        ./example/tensor/collectiveDemo/tensorCollectiveDemo
@@ -227,6 +232,7 @@ The exact command order that produced the working multi-node run on Hemera was:
     # still on ga0XX while generating the hostfile
     scontrol show hostnames "$SLURM_JOB_NODELIST" | awk '{print $0 " slots=2"}' > hostfile
     # hostfile now reflects ga0XX nodes from this allocation
+    # DONT FORGET EXIT HERE!
     exit   # return to hemera5 while keeping the allocation alive <- IMPORTANT!!!!!
     # prompt switches back to yusufo81@hemera5 (login node)
     ```
