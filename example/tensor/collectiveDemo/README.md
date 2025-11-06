@@ -153,29 +153,98 @@ mpirun --oversubscribe -n 4 --map-by ppr:2:node --bind-to none \
 # Manual hostfile launch (when Slurm PMI support is missing)
 
 On Hemera we could not rely on `srun` to launch MPI ranks because the
-`openmpi/4.1.5-cuda12x-gdr` module lacks Slurm PMI hooks. We therefore grabbed an
-allocation with GPUs using `salloc -N2 -n4 --partition=casus_a100 --gres=gpu:2
---time=00:30:00`, attached to it (`srun --jobid=$SLURM_JOB_ID --pty bash -l`),
-and drove the job with `mpirun`. The hostfile must always match the *current*
-allocation; regenerate it after every `salloc` to avoid "node not present"
-errors (we hit this when `ga010` from a previous run lingered).
+`openmpi/4.1.5-cuda12x-gdr` module lacks Slurm PMI hooks. The only configuration
+that worked for us was:
 
-# Replace the hostnames below with the nodes from your allocation
-cat > hostfile <<'EOF'
-ga011 slots=2
-ga012 slots=2
-EOF
+1. Allocate two GPU nodes:
 
-module load gcc/12.2.0 cuda/12.4 nvidia/24.3 openmpi/4.1.5-cuda12x-gdr
-export NCCL_ROOT=$NVHPC/Linux_x86_64/24.3/comm_libs/nccl
-export LD_LIBRARY_PATH=$NCCL_ROOT/lib:$LD_LIBRARY_PATH
+    ```bash
+    salloc -N2 -n4 --partition=casus_a100 --gres=gpu:2 --time=00:30:00
+    ```
 
-mpirun -n 4 \
-    --hostfile hostfile \
-    --map-by ppr:2:node --bind-to none \
-    --oversubscribe \
-    -x NCCL_ROOT -x LD_LIBRARY_PATH \
-    ./build/example/tensor/collectiveDemo/tensorCollectiveDemo
+2. Attach an interactive shell on the allocation:
+
+    ```bash
+    srun --jobid=$SLURM_JOB_ID --pty bash -l
+    ```
+
+3. Prepare the hostfile with the nodes from *this* allocation (adjust hostnames
+    every time you re-run `salloc`):
+
+    ```bash
+    cat > hostfile <<'EOF'
+    ga011 slots=2
+    ga012 slots=2
+    EOF
+    ```
+
+4. Load modules, export NCCL paths, and launch via `mpirun`:
+
+    ```bash
+    module load gcc/12.2.0 cuda/12.4 nvidia/24.3 openmpi/4.1.5-cuda12x-gdr
+    export NCCL_ROOT=$NVHPC/Linux_x86_64/24.3/comm_libs/nccl
+    export LD_LIBRARY_PATH=$NCCL_ROOT/lib:$LD_LIBRARY_PATH
+
+    mpirun -n 4 \
+         --hostfile hostfile \
+         --map-by ppr:2:node --bind-to none \
+         --oversubscribe \
+         -x NCCL_ROOT -x LD_LIBRARY_PATH \
+         ./build/example/tensor/collectiveDemo/tensorCollectiveDemo
+    ```
+
+If the hostfile contains nodes from an expired allocation (e.g., `ga010`),
+`mpirun` will refuse to launch with a "node not present" error, so keep it in
+sync with `squeue -u $USER`.
+
+### Hemera login-to-run checklist
+
+The exact command order that produced the working multi-node run on Hemera was:
+
+1. Load toolchains and point NCCL into your environment on the login node, then move into the build tree:
+
+    ```bash
+    module load gcc/12.2.0 cuda/12.4 nvidia/24.3 openmpi/4.1.5-cuda12x-gdr
+    export NCCL_ROOT=$NVHPC/Linux_x86_64/24.3/comm_libs/nccl
+    export LD_LIBRARY_PATH=$NCCL_ROOT/lib:$LD_LIBRARY_PATH
+    cd ~/alpaka3/build
+    ```
+
+2. Request two GPU nodes with Slurm (wait for it to print the granted node list):
+
+    ```bash
+    salloc -N2 -n4 --partition=casus_a100 --gres=gpu:2 --time=00:30:00
+    ```
+
+3. Attach an interactive shell to the allocation and confirm the GPUs/modules are visible from a compute node. Stay in `~/alpaka3/build` so the hostfile lands beside the binary:
+
+    ```bash
+    srun --jobid=$SLURM_JOB_ID --pty bash -l
+    # prompt switches to yusufo81@ga0XX (compute node)
+    module load cuda/12.4
+    nvidia-smi -L
+    scontrol show hostnames "$SLURM_JOB_NODELIST"
+    # still on ga0XX while generating the hostfile
+    scontrol show hostnames "$SLURM_JOB_NODELIST" | awk '{print $0 " slots=2"}' > hostfile
+    # hostfile now reflects ga0XX nodes from this allocation
+    exit   # return to hemera5 while keeping the allocation alive <- IMPORTANT!!!!!
+    # prompt switches back to yusufo81@hemera5 (login node)
+    ```
+
+    The `scontrol show hostnames` command avoids typos and regenerates the hostfile each time a new allocation is granted.
+
+4. Back on `hemera5`, reuse the same module environment and launch MPI with the fresh hostfile:
+
+    ```bash
+    mpirun -n 4 \
+         --hostfile hostfile \
+         --map-by ppr:2:node --bind-to none \
+         --oversubscribe \
+         -x NCCL_ROOT -x LD_LIBRARY_PATH \
+         ./build/example/tensor/collectiveDemo/tensorCollectiveDemo
+    ```
+
+If you see `bash: mpirun: command not found` after returning to `hemera5`, reload the modules from step 1 and rerun the `mpirun` command. Whenever the allocation expires, repeat the checklist from step 2 so the hostfile reflects the new node names.
 
 # Example output when CUDA executors are not available in the allocation
 
@@ -208,3 +277,87 @@ Rank 0 result: 4 8 12 16
 Rank 1 result: 4 8 12 16
 Rank 2 result: 4 8 12 16
 Rank 3 result: 4 8 12 16
+
+
+Some diagnostics commands:
+
+echo $SLURM_JOB_ID → empty means you’re not in an srun --pty shell.
+squeue -u yusufo81 → if the allocation is gone, there’s no job listed.
+hostname → compute nodes show ga0XX; login node is hemera5.cluster.
+So seeing [yusufo81@hemera5 build]$ doesn’t imply you’re still inside srun; it’s the normal login-shell prompt.
+
+A CORRECT HISTORY
+
+[yusufo81@hemera5 build]$  srun --jobid=$SLURM_JOB_ID --pty bash -l
+[yusufo81@ga010 build]$ module load cuda/12.4
+Unloading module cuda/12.4 
+Loading module cuda/12.4 
+[yusufo81@ga010 build]$     scontrol show hostnames "$SLURM_JOB_NODELIST"
+ga010
+ga012
+[yusufo81@ga010 build]$  mpirun -n 4 \
+>          --hostfile hostfile \
+>          --map-by ppr:2:node --bind-to none \
+>          --oversubscribe \
+>          -x NCCL_ROOT -x LD_LIBRARY_PATH \
+>          ./build/example/tensor/collectiveDemo/tensorCollectiveDemo
+--------------------------------------------------------------------------
+A hostfile was provided that contains at least one node not
+present in the allocation:
+
+  hostfile:  hostfile
+  node:      ga011
+
+If you are operating in a resource-managed environment, then only
+nodes that are in the allocation can be used in the hostfile. You
+may find relative node syntax to be a useful alternative to
+specifying absolute node names see the orte_hosts man page for
+further information.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+An internal error has occurred in ORTE:
+
+[[41244,0],0] FORCE-TERMINATE AT (null):1 - error plm_slurm_module.c(475)
+
+This is something that should be reported to the developers.
+--------------------------------------------------------------------------
+[yusufo81@ga010 build]$ ls
+alpaka_build_files  alpakaFeatureTests  CMakeFiles           CTestTestfile.cmake  hostfile
+alpakaConfig.cmake  CMakeCache.txt      cmake_install.cmake  example              Makefile
+[yusufo81@ga010 build]$ vi hostfile 
+[yusufo81@ga010 build]$  mpirun -n 4          --hostfile hostfile          --map-by ppr:2:node --bind-to none          --oversubscribe          -x NCCL_ROOT -x LD_LIBRARY_PATH          ./build/example/tensor/collectiveDemo/tensorCollectiveDemo
+
+ex^C
+^C[yusufo81@ga010 build]$ exit
+logout
+srun: error: ga010: task 0: Exited with exit code 1
+[yusufo81@hemera5 build]$     mpirun -n 4          --hostfile hostfile          --map-by ppr:2:node --bind-to none          --oversubscribe          -x NCCL_ROOT -x LD_LIBRARY_PATH          ./example/tensor/collectiveDemo/tensorCollectiveDemo
+
+=== Tensor Collective Demo ===
+API: Host
+Executor: alpaka::exec::CpuOmpBlocks
+World size: 4
+Local size: 2
+Collective provider for NCCL is only available on CUDA executors; skipping.
+
+=== Tensor Collective Demo ===
+API: Host
+Executor: alpaka::exec::CpuSerial
+World size: 4
+Local size: 2
+Collective provider for NCCL is only available on CUDA executors; skipping.
+
+=== Tensor Collective Demo ===
+API: Cuda
+Executor: alpaka::exec::GpuCuda
+World size: 4
+Local size: 2
+Rank 0 using device 0
+Rank 1 using device 1
+Rank 2 using device 0
+Rank 3 using device 1
+Rank 2 result: 4 8 12 16
+Rank 0 result: 4 8 12 16
+Rank 1 result: 4 8 12 16
+Rank 3 result: 4 8 12 16
+[yusufo81@hemera5 build]$ 
