@@ -31,6 +31,7 @@ This example demonstrates Alpaka's experimental NCCL collective provider.
 ExampleNCCL Smoke Test Steps (MPI bootstrap)
 
 module load gcc/12.2.0 cuda/12.4 nvidia/24.3 (keeps nvcc happy and exposes NCCL)
+module cmake git
 export NCCL_ROOT=$NVHPC/Linux_x86_64/24.3/comm_libs/nccl
 export CMAKE_PREFIX_PATH=$NCCL_ROOT:$CMAKE_PREFIX_PATH
 export LD_LIBRARY_PATH=$NCCL_ROOT/lib:$LD_LIBRARY_PATH
@@ -108,7 +109,7 @@ squeue -u $USER
 
 # If not, get a new one
 salloc -N2 -n4 --partition=casus_a100 --time=00:30:00
-
+see the nodes: srun -N2 -n2 hostname
 # Once in allocation, run on compute nodes
 srun -n 1 nvidia-smi -L
 
@@ -147,3 +148,63 @@ ldd example/tensor/collectiveDemo/tensorCollectiveDemo | grep mpi
 mpirun --oversubscribe -n 4 --map-by ppr:2:node --bind-to none \
        -x NCCL_ROOT -x LD_LIBRARY_PATH \
        ./example/tensor/collectiveDemo/tensorCollectiveDemo
+
+
+# Manual hostfile launch (when Slurm PMI support is missing)
+
+On Hemera we could not rely on `srun` to launch MPI ranks because the
+`openmpi/4.1.5-cuda12x-gdr` module lacks Slurm PMI hooks. We therefore grabbed an
+allocation with GPUs using `salloc -N2 -n4 --partition=casus_a100 --gres=gpu:2
+--time=00:30:00`, attached to it (`srun --jobid=$SLURM_JOB_ID --pty bash -l`),
+and drove the job with `mpirun`. The hostfile must always match the *current*
+allocation; regenerate it after every `salloc` to avoid "node not present"
+errors (we hit this when `ga010` from a previous run lingered).
+
+# Replace the hostnames below with the nodes from your allocation
+cat > hostfile <<'EOF'
+ga011 slots=2
+ga012 slots=2
+EOF
+
+module load gcc/12.2.0 cuda/12.4 nvidia/24.3 openmpi/4.1.5-cuda12x-gdr
+export NCCL_ROOT=$NVHPC/Linux_x86_64/24.3/comm_libs/nccl
+export LD_LIBRARY_PATH=$NCCL_ROOT/lib:$LD_LIBRARY_PATH
+
+mpirun -n 4 \
+    --hostfile hostfile \
+    --map-by ppr:2:node --bind-to none \
+    --oversubscribe \
+    -x NCCL_ROOT -x LD_LIBRARY_PATH \
+    ./build/example/tensor/collectiveDemo/tensorCollectiveDemo
+
+# Example output when CUDA executors are not available in the allocation
+
+=== Tensor Collective Demo ===
+API: Host
+Executor: alpaka::exec::CpuOmpBlocks
+World size: 4
+Local size: 2
+Collective provider for NCCL is only available on CUDA executors; skipping.
+
+=== Tensor Collective Demo ===
+API: Host
+Executor: alpaka::exec::CpuSerial
+World size: 4
+Local size: 2
+Collective provider for NCCL is only available on CUDA executors; skipping.
+
+# Example output on GPU-enabled nodes (NCCL active)
+
+=== Tensor Collective Demo ===
+API: Cuda
+Executor: alpaka::exec::GpuCuda
+World size: 4
+Local size: 2
+Rank 0 using device 0
+Rank 1 using device 1
+Rank 3 using device 1
+Rank 2 using device 0
+Rank 0 result: 4 8 12 16
+Rank 1 result: 4 8 12 16
+Rank 2 result: 4 8 12 16
+Rank 3 result: 4 8 12 16
