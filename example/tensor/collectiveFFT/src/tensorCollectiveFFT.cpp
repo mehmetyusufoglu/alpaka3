@@ -34,6 +34,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <span>
@@ -274,6 +275,10 @@ namespace
         std::size_t signalLength = 16384;
         std::optional<std::string> signalFile{};
         std::size_t previewBins = 12;
+        bool verifyDirect = true;
+        std::optional<std::string> referenceFftFile{};
+        float verifyAbsTolerance = 1.0e-4f;
+        float verifyRelTolerance = 1.0e-3f;
         std::vector<std::string> warnings{};
     };
 
@@ -283,6 +288,11 @@ namespace
         constexpr std::string_view lengthPrefix{"--signal-length="};
         constexpr std::string_view filePrefix{"--signal-file="};
         constexpr std::string_view previewPrefix{"--preview-bins="};
+        constexpr std::string_view referencePrefix{"--reference-fft="};
+        constexpr std::string_view absTolPrefix{"--verify-abs="};
+        constexpr std::string_view relTolPrefix{"--verify-rel="};
+        constexpr std::string_view verifyFlag{"--verify-direct"};
+        constexpr std::string_view skipVerifyFlag{"--skip-verify"};
 
         for(int i = 1; i < argc; ++i)
         {
@@ -327,6 +337,56 @@ namespace
                 else
                 {
                     options.previewBins = static_cast<std::size_t>(parsed);
+                }
+            }
+            else if(arg == skipVerifyFlag)
+            {
+                options.verifyDirect = false;
+            }
+            else if(arg == verifyFlag)
+            {
+                options.verifyDirect = true;
+            }
+            else if(arg.rfind(referencePrefix, 0) == 0)
+            {
+                std::string path(arg.substr(referencePrefix.size()));
+                if(path.empty())
+                {
+                    options.warnings.emplace_back("Ignoring empty --reference-fft argument.");
+                }
+                else
+                {
+                    options.referenceFftFile = std::move(path);
+                }
+            }
+            else if(arg.rfind(absTolPrefix, 0) == 0)
+            {
+                std::string value(arg.substr(absTolPrefix.size()));
+                char* end = nullptr;
+                float parsed = std::strtof(value.c_str(), &end);
+                if(end == value.c_str() || !std::isfinite(parsed) || parsed < 0.0f)
+                {
+                    options.warnings.emplace_back(
+                        "Ignoring invalid --verify-abs value '" + value + "'; keeping default.");
+                }
+                else
+                {
+                    options.verifyAbsTolerance = parsed;
+                }
+            }
+            else if(arg.rfind(relTolPrefix, 0) == 0)
+            {
+                std::string value(arg.substr(relTolPrefix.size()));
+                char* end = nullptr;
+                float parsed = std::strtof(value.c_str(), &end);
+                if(end == value.c_str() || !std::isfinite(parsed) || parsed < 0.0f)
+                {
+                    options.warnings.emplace_back(
+                        "Ignoring invalid --verify-rel value '" + value + "'; keeping default.");
+                }
+                else
+                {
+                    options.verifyRelTolerance = parsed;
                 }
             }
         }
@@ -407,6 +467,164 @@ namespace
         }
 
         return true;
+    }
+
+    bool loadFullSignalSequence(
+        CommandLineOptions const& options,
+        std::size_t totalSamples,
+        std::vector<std::complex<float>>& samples,
+        std::string& errorMessage)
+    {
+        samples.assign(totalSamples, std::complex<float>{0.0f, 0.0f});
+        if(totalSamples == 0)
+            return true;
+
+        if(options.signalFile)
+        {
+            std::ifstream input(options.signalFile->c_str(), std::ios::binary);
+            if(!input)
+            {
+                errorMessage = "Failed to open signal file '" + *options.signalFile + "' for verification.";
+                return false;
+            }
+
+            input.seekg(0, std::ios::end);
+            std::streamoff const fileBytes = input.tellg();
+            if(fileBytes < 0)
+            {
+                errorMessage = "tellg failed while sizing signal file.";
+                return false;
+            }
+            std::size_t const expectedBytes = totalSamples * sizeof(float);
+            if(static_cast<std::size_t>(fileBytes) < expectedBytes)
+            {
+                errorMessage = "Signal file shorter than required samples (expected at least "
+                               + std::to_string(expectedBytes) + " bytes).";
+                return false;
+            }
+            input.seekg(0, std::ios::beg);
+
+            for(std::size_t idx = 0; idx < totalSamples; ++idx)
+            {
+                float value = 0.0f;
+                input.read(reinterpret_cast<char*>(&value), sizeof(float));
+                if(!input)
+                {
+                    errorMessage = "Failed to read sample index " + std::to_string(idx) + " during verification.";
+                    return false;
+                }
+                samples[idx] = std::complex<float>{value, 0.0f};
+            }
+        }
+        else
+        {
+            for(std::size_t idx = 0; idx < totalSamples; ++idx)
+            {
+                samples[idx] = std::complex<float>{syntheticSample(idx, totalSamples), 0.0f};
+            }
+        }
+
+        return true;
+    }
+
+    bool loadReferenceSpectrumFromFile(
+        std::string const& path,
+        std::size_t totalSamples,
+        std::vector<std::complex<float>>& spectrum,
+        std::string& errorMessage)
+    {
+        spectrum.assign(totalSamples, std::complex<float>{0.0f, 0.0f});
+        if(totalSamples == 0)
+            return true;
+
+        std::ifstream input(path.c_str(), std::ios::binary);
+        if(!input)
+        {
+            errorMessage = "Failed to open reference FFT file '" + path + "'.";
+            return false;
+        }
+
+        input.seekg(0, std::ios::end);
+        std::streamoff const fileBytes = input.tellg();
+        if(fileBytes < 0)
+        {
+            errorMessage = "tellg failed while sizing reference FFT file.";
+            return false;
+        }
+        std::size_t const expectedBytes = totalSamples * sizeof(float) * 2U;
+        if(static_cast<std::size_t>(fileBytes) < expectedBytes)
+        {
+            errorMessage = "Reference FFT file shorter than required spectrum length (expected at least "
+                           + std::to_string(expectedBytes) + " bytes).";
+            return false;
+        }
+        input.seekg(0, std::ios::beg);
+
+        for(std::size_t idx = 0; idx < totalSamples; ++idx)
+        {
+            float real = 0.0f;
+            float imag = 0.0f;
+            input.read(reinterpret_cast<char*>(&real), sizeof(float));
+            input.read(reinterpret_cast<char*>(&imag), sizeof(float));
+            if(!input)
+            {
+                errorMessage = "Failed to read complex spectrum value at index " + std::to_string(idx) + '.';
+                return false;
+            }
+            spectrum[idx] = std::complex<float>{real, imag};
+        }
+
+        return true;
+    }
+
+    struct VerificationStats
+    {
+        float maxAbsError = 0.0f;
+        float maxRelError = 0.0f;
+        std::size_t worstIndex = 0;
+        std::size_t failureCount = 0;
+    };
+
+    bool compareSpectra(
+        std::span<std::complex<float> const> computed,
+        std::span<std::complex<float> const> reference,
+        float absTolerance,
+        float relTolerance,
+        VerificationStats& stats)
+    {
+        stats = VerificationStats{};
+        if(computed.size() != reference.size())
+        {
+            stats.failureCount = std::max(computed.size(), reference.size());
+            stats.maxAbsError = std::numeric_limits<float>::infinity();
+            stats.maxRelError = std::numeric_limits<float>::infinity();
+            stats.worstIndex = 0;
+            return false;
+        }
+
+        for(std::size_t idx = 0; idx < computed.size(); ++idx)
+        {
+            std::complex<float> const diff = computed[idx] - reference[idx];
+            float const absDiff = std::abs(diff);
+            float const referenceMag = std::abs(reference[idx]);
+            float const relDiff = (referenceMag > 0.0f) ? absDiff / referenceMag : absDiff;
+
+            if(absDiff > stats.maxAbsError)
+            {
+                stats.maxAbsError = absDiff;
+                stats.worstIndex = idx;
+            }
+            if(relDiff > stats.maxRelError)
+            {
+                stats.maxRelError = relDiff;
+            }
+            if(absDiff > absTolerance && relDiff > relTolerance)
+            {
+                ++stats.failureCount;
+            }
+        }
+
+        return stats.failureCount == 0;
     }
 
     // Naive O(n^2) DFT of the rank's strided sample sequence; good enough for demonstration sizes.
@@ -727,6 +945,101 @@ namespace
 
             if(groupConfig.worldRank == 0)
             {
+                auto performVerification
+                    = [&](std::vector<std::complex<float>> const& reference, std::string_view sourceLabel)
+                {
+                    std::span<std::complex<float> const> computedSpan{globalSpectrum.data(), globalSpectrum.size()};
+                    std::span<std::complex<float> const> referenceSpan{reference.data(), reference.size()};
+                    VerificationStats stats{};
+                    bool const ok = compareSpectra(
+                        computedSpan,
+                        referenceSpan,
+                        options.verifyAbsTolerance,
+                        options.verifyRelTolerance,
+                        stats);
+
+                    if(ok)
+                    {
+                        std::cout << "Verification against " << sourceLabel
+                                  << " passed (max abs diff=" << stats.maxAbsError
+                                  << ", max rel diff=" << stats.maxRelError << ").\n";
+                    }
+                    else
+                    {
+                        std::cout << "Verification against " << sourceLabel << " failed (" << stats.failureCount
+                                  << " bins over tolerance; max abs diff=" << stats.maxAbsError << " at bin "
+                                  << stats.worstIndex << ", max rel diff=" << stats.maxRelError << ").\n";
+                    }
+                    return ok;
+                };
+
+                bool verificationRequested = options.verifyDirect || options.referenceFftFile.has_value();
+                bool verificationSucceeded = true;
+                bool verificationPerformed = false;
+
+                if(options.referenceFftFile)
+                {
+                    std::vector<std::complex<float>> referenceSpectrum;
+                    std::string referenceError;
+                    if(loadReferenceSpectrumFromFile(
+                           *options.referenceFftFile,
+                           globalSamples,
+                           referenceSpectrum,
+                           referenceError))
+                    {
+                        verificationPerformed = true;
+                        verificationSucceeded
+                            = performVerification(referenceSpectrum, "reference FFT file") && verificationSucceeded;
+                    }
+                    else
+                    {
+                        std::cerr << "Unable to load reference FFT file: " << referenceError << '\n';
+                        verificationSucceeded = false;
+                    }
+                }
+
+                if(options.verifyDirect)
+                {
+                    if(globalSamples > (1U << 15))
+                    {
+                        std::cout << "Running naive O(n^2) verification for " << globalSamples
+                                  << " samples; this may take a while.\n";
+                    }
+
+                    std::vector<std::complex<float>> fullSignal;
+                    std::string fullSignalError;
+                    if(loadFullSignalSequence(options, globalSamples, fullSignal, fullSignalError))
+                    {
+                        auto const directSpectrum = computeLocalFft(
+                            std::span<std::complex<float> const>{fullSignal.data(), fullSignal.size()});
+                        verificationPerformed = true;
+                        verificationSucceeded
+                            = performVerification(directSpectrum, "direct naive DFT") && verificationSucceeded;
+                    }
+                    else
+                    {
+                        std::cerr << "Unable to assemble full input for verification: " << fullSignalError << '\n';
+                        verificationSucceeded = false;
+                    }
+                }
+
+                if(!verificationRequested)
+                {
+                    std::cout << "Verification disabled; enable with --verify-direct or provide --reference-fft.\n";
+                }
+                else if(!verificationPerformed)
+                {
+                    std::cout << "Verification could not be completed due to previous errors.\n";
+                }
+                else if(!verificationSucceeded)
+                {
+                    std::cout << "Distributed FFT verification failed.\n";
+                }
+                else
+                {
+                    std::cout << "Distributed FFT verification succeeded.\n";
+                }
+
                 std::cout << "Distributed FFT complete across " << participantCount
                           << " ranks using NCCL all-reduce.\n";
             }

@@ -1,4 +1,4 @@
-
+#!/bin/bash
 
 # Set all NCCL and MPI environment variables
 export NCCL_ROOT=/trinity/shared/pkg/devel/nvidia/hpc_sdk/Linux_x86_64/24.3/comm_libs/nccl
