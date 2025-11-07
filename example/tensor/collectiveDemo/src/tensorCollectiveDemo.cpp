@@ -16,6 +16,7 @@
 #include <alpaka/tensor/providers/EnabledVendorLibs.hpp>
 #include <alpaka/tensor/providers/collective/CollectiveTypes.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdlib>
@@ -408,8 +409,9 @@ namespace
             tt::Tensor1D<float, Device> values(device, {elementCount}, "collective-demo-values");
 
             auto* hostValues = values.hostData();
+            float const rankScale = bootstrap.enabled ? static_cast<float>(bootstrap.worldRank + 1) : 1.0f;
             for(std::size_t i = 0; i < elementCount; ++i)
-                hostValues[i] = static_cast<float>(i + 1);
+                hostValues[i] = rankScale * static_cast<float>(i + 1);
             values.markHostModified();
 
             values.ensureOnDevice(device, queue);
@@ -448,7 +450,7 @@ namespace
             values.toHost(device, queue);
             alpaka::onHost::wait(queue);
 
-            std::cout << "Rank " << groupConfig.worldRank << " result:";
+            std::cout << "Rank " << groupConfig.worldRank << " all-reduce:";
             for(std::size_t i = 0; i < elementCount; ++i)
                 std::cout << ' ' << hostValues[i];
             if(bootstrap.enabled)
@@ -461,6 +463,75 @@ namespace
                     << "\n(Note: With a single GPU the values remain unchanged; on multi-GPU systems they represent "
                        "the rank sum.)\n";
             }
+
+            // Demonstrate a second collective so we can verify NCCL beyond all-reduce.
+            tt::Tensor1D<float, Device> broadcastValues(device, {elementCount}, "collective-demo-broadcast");
+            auto* hostBroadcast = broadcastValues.hostData();
+
+            if(bootstrap.enabled)
+            {
+                if(groupConfig.worldRank == 0)
+                {
+                    for(std::size_t i = 0; i < elementCount; ++i)
+                        hostBroadcast[i] = 100.0f + 10.0f * static_cast<float>(i);
+                }
+                else
+                {
+                    std::fill(hostBroadcast, hostBroadcast + elementCount, -1.0f);
+                }
+            }
+            else
+            {
+                for(std::size_t i = 0; i < elementCount; ++i)
+                    hostBroadcast[i] = 100.0f + 10.0f * static_cast<float>(i);
+            }
+
+            broadcastValues.markHostModified();
+            broadcastValues.ensureOnDevice(device, queue);
+            auto& broadcastBuffer = broadcastValues.deviceBuffer(device, queue);
+            auto* deviceBroadcast = alpaka::onHost::data(broadcastBuffer);
+
+            std::array<void const*, 1> sendPtrs{static_cast<void const*>(deviceBroadcast)};
+            std::array<void*, 1> recvPtrsBroadcast{static_cast<void*>(deviceBroadcast)};
+            std::array<void*, 1> streamPtrsBroadcast{reinterpret_cast<void*>(alpaka::onHost::getNativeHandle(queue))};
+
+            collective::MultiDeviceBuffers broadcastBuffers{};
+            broadcastBuffers.send = std::span<void const*>{sendPtrs};
+            broadcastBuffers.recv = std::span<void*>{recvPtrsBroadcast};
+            broadcastBuffers.streams = std::span<void*>{streamPtrsBroadcast};
+            broadcastBuffers.inPlace = true;
+
+            collective::BroadcastRequest broadcastRequest{};
+            broadcastRequest.buffers = broadcastBuffers;
+            broadcastRequest.elementCount = elementCount;
+            broadcastRequest.dataType = collective::DataType::Float32;
+            broadcastRequest.rootRank = 0;
+
+            if(!bootstrap.enabled || bootstrap.worldRank == 0)
+            {
+                std::cout << "Broadcasting a control vector from rank 0.\n";
+            }
+
+            auto const broadcastStatus = context.collectiveBroadcast(broadcastRequest);
+
+            if(broadcastStatus != tt::OpStatus::Success)
+            {
+                if(!bootstrap.enabled || bootstrap.worldRank == 0)
+                {
+                    std::cout << "ncclBroadcast invocation returned status=" << static_cast<int>(broadcastStatus)
+                              << "; skipping verification.\n";
+                }
+                return 0;
+            }
+
+            broadcastValues.markDeviceModified(device, queue);
+            broadcastValues.toHost(device, queue);
+            alpaka::onHost::wait(queue);
+
+            std::cout << "Rank " << groupConfig.worldRank << " broadcast:";
+            for(std::size_t i = 0; i < elementCount; ++i)
+                std::cout << ' ' << hostBroadcast[i];
+            std::cout << "\n";
 
             return 0;
         }
