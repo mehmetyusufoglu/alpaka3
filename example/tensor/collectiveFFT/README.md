@@ -44,7 +44,14 @@ the executable.
 --reference-fft=<path>  Binary float32 pairs (real, imag) reference spectrum for comparison.
 --verify-abs=<eps>      Absolute tolerance for verification (default 1e-4).
 --verify-rel=<eps>      Relative tolerance for verification (default 1e-3).
+--disable-provider-fft  Skip the cuFFT-backed provider and use the naive host DFT.
+--force-provider-fft    Require the cuFFT provider; exit if cuFFT is unavailable.
 ```
+
+By default the sample automatically enables the cuFFT-backed tensor provider when
+CUDA and cuFFT are both available at runtime. If either dependency is missing the
+context transparently falls back to the naive host DFT unless `--force-provider-fft`
+is specified.
 
 When `--signal-file` is omitted, each rank synthesizes a deterministic multi-tone
 signal so the demo can run without external data.
@@ -107,18 +114,6 @@ all-reduce every process holds the same global spectrum `X`. Rank 0 then:
 Adjust tolerances as needed to match the precision of upstream generators. Disable
 the direct check with `--skip-verify` when using very large signals or when an
 external FFT provides the baseline.
-
-## Version 1 Pipeline Overview
-
-1. **Command-line parsing (rank 0 CPU)** – read options, choose synthetic vs. file-backed signal, decide verification mode and precision.
-2. **Signal preparation (all rank CPUs)** – load each rank’s strided samples from disk or synthesize them in `loadSignalChunk`/`loadFullSignalSequence`.
-3. **Local DFT (all rank CPUs)** – run the naive O(n²) transform with `computeLocalFft` to obtain the per-rank spectrum.
-4. **Phase compensation (all rank CPUs)** – expand the strided spectrum into global contributions via `buildRankContribution`.
-5. **GPU staging (all ranks)** – interleave contributions into an alpaka tensor and move it to the CUDA device with `ensureOnDevice`.
-6. **Collective reduction (all GPUs)** – invoke NCCL all-reduce to sum contributions so every rank holds the full FFT on device memory.
-7. **Host retrieval (all ranks)** – copy the reduced tensor back to host (`toHost`/`wait`) for inspection.
-8. **Reference assembly (rank 0 CPU)** – rebuild the full signal, run the high-precision DFT (`computeLocalFftWithPrecision`), optionally read a reference spectrum.
-9. **Verification and reporting (rank 0 CPU)** – compare spectra with `compareSpectra`, print results, and emit the final success banner.
 
 ## Troubleshooting Notes
 

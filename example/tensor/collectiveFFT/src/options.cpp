@@ -20,6 +20,8 @@ namespace collectiveFft
         constexpr std::string_view verifyFlag{"--verify-direct"};
         constexpr std::string_view skipVerifyFlag{"--skip-verify"};
         constexpr std::string_view precisionPrefix{"--verify-direct-precision="};
+        constexpr std::string_view disableProviderFlag{"--disable-provider-fft"};
+        constexpr std::string_view forceProviderFlag{"--force-provider-fft"};
 
         for(int i = 1; i < argc; ++i)
         {
@@ -73,6 +75,16 @@ namespace collectiveFft
             else if(arg == verifyFlag)
             {
                 options.verifyDirect = true;
+            }
+            else if(arg == disableProviderFlag)
+            {
+                setProviderFftEnabled(options, false);
+                setProviderFftRequired(options, false);
+            }
+            else if(arg == forceProviderFlag)
+            {
+                setProviderFftEnabled(options, true);
+                setProviderFftRequired(options, true);
             }
             else if(arg.rfind(referencePrefix, 0) == 0)
             {

@@ -29,6 +29,7 @@
 // Provider system provides vendor specific implementations of tensor operations.
 #include <alpaka/tensor/providers/CuBLASProvider.hpp>
 #include <alpaka/tensor/providers/CuDNNProvider.hpp>
+#include <alpaka/tensor/providers/CuFFTProvider.hpp>
 #include <alpaka/tensor/providers/DefaultProvider.hpp>
 #include <alpaka/tensor/providers/EnabledVendorLibs.hpp>
 #include <alpaka/tensor/providers/MIOpenProvider.hpp>
@@ -40,6 +41,7 @@
 #include <alpaka/tensor/providers/collective/CollectiveTypes.hpp>
 
 #include <cmath>
+#include <complex>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -61,8 +63,11 @@ namespace alpaka::tensor
         {
             if constexpr(std::is_same_v<std::decay_t<Exec>, alpaka::exec::GpuCuda>)
             {
-                return std::
-                    tuple<provider_tag<CuBLASProvider>, provider_tag<CuDNNProvider>, provider_tag<DefaultProvider>>{};
+                return std::tuple<
+                    provider_tag<CuFFTProvider>,
+                    provider_tag<CuBLASProvider>,
+                    provider_tag<CuDNNProvider>,
+                    provider_tag<DefaultProvider>>{};
             }
             else if constexpr(std::is_same_v<std::decay_t<Exec>, alpaka::exec::GpuHip>)
             {
@@ -135,6 +140,14 @@ namespace alpaka::tensor
             }
 
             template<typename Fn>
+            static bool fft(IOpProvider& provider, Fn&& fn)
+            {
+                static_cast<void>(provider);
+                static_cast<void>(fn);
+                return false;
+            }
+
+            template<typename Fn>
             static bool conv(IOpProvider& provider, Fn&& fn)
             {
                 static_cast<void>(provider);
@@ -200,6 +213,17 @@ namespace alpaka::tensor
                 if constexpr(EnabledVendorLibs::hasCUBLAS)
                 {
                     if(detail::tryInvokeProvider<CuBLASProvider>(provider, std::forward<Fn>(fn)))
+                        return true;
+                }
+                return false;
+            }
+
+            template<typename Fn>
+            static bool fft(IOpProvider& provider, Fn&& fn)
+            {
+                if constexpr(EnabledVendorLibs::hasCUFFT)
+                {
+                    if(detail::tryInvokeProvider<CuFFTProvider>(provider, std::forward<Fn>(fn)))
                         return true;
                 }
                 return false;
@@ -285,6 +309,14 @@ namespace alpaka::tensor
                     if(detail::tryInvokeProvider<RocBLASProvider>(provider, std::forward<Fn>(fn)))
                         return true;
                 }
+                return false;
+            }
+
+            template<typename Fn>
+            static bool fft(IOpProvider& provider, Fn&& fn)
+            {
+                static_cast<void>(provider);
+                static_cast<void>(fn);
                 return false;
             }
 
@@ -377,6 +409,7 @@ namespace alpaka::tensor
         std::unique_ptr<IOpProvider> batchnormProvider_;
         std::unique_ptr<IOpProvider> activationProvider_;
         std::unique_ptr<IOpProvider> poolingProvider_;
+        std::unique_ptr<IOpProvider> fftProvider_;
         std::unique_ptr<IOpProvider> fallbackProvider_;
         std::unique_ptr<collective::ICollectiveProvider> collectiveProvider_;
         TExec const* exec_{nullptr};
@@ -394,6 +427,7 @@ namespace alpaka::tensor
             batchnormProvider_ = detail::makeProviderForOp<Exec, OpType::BatchNorm>();
             activationProvider_ = detail::makeProviderForOp<Exec, OpType::Activation>();
             poolingProvider_ = detail::makeProviderForOp<Exec, OpType::Pooling>();
+            fftProvider_ = detail::makeProviderForOp<Exec, OpType::FFT>();
             fallbackProvider_ = std::make_unique<DefaultProvider>();
         }
 
@@ -423,6 +457,11 @@ namespace alpaka::tensor
             activationProvider_ = std::move(provider);
         }
 
+        void setFftProvider(std::unique_ptr<IOpProvider> provider)
+        {
+            fftProvider_ = std::move(provider);
+        }
+
         IOpProvider& getGemmProvider()
         {
             return (gemmProvider_ && gemmProvider_->isActive() && gemmProvider_->supportsOperation(OpType::GEMM))
@@ -450,6 +489,13 @@ namespace alpaka::tensor
             return (activationProvider_ && activationProvider_->isActive()
                     && activationProvider_->supportsOperation(OpType::Activation))
                        ? *activationProvider_
+                       : *fallbackProvider_;
+        }
+
+        IOpProvider& getFftProvider()
+        {
+            return (fftProvider_ && fftProvider_->isActive() && fftProvider_->supportsOperation(OpType::FFT))
+                       ? *fftProvider_
                        : *fallbackProvider_;
         }
 
@@ -487,6 +533,9 @@ namespace alpaka::tensor
             case OpType::Pooling:
                 return (poolingProvider_ && poolingProvider_->isActive() && poolingProvider_->supportsOperation(op))
                        || fallbackProvider_->supportsOperation(op);
+            case OpType::FFT:
+                return (fftProvider_ && fftProvider_->isActive() && fftProvider_->supportsOperation(op))
+                       || fallbackProvider_->supportsOperation(op);
             default:
                 return fallbackProvider_->supportsOperation(op);
             }
@@ -510,6 +559,8 @@ namespace alpaka::tensor
                 active.push_back("Activation: " + activationProvider_->getBackendName());
             if(poolingProvider_ && poolingProvider_->isActive())
                 active.push_back("Pooling: " + poolingProvider_->getBackendName());
+            if(fftProvider_ && fftProvider_->isActive())
+                active.push_back("FFT: " + fftProvider_->getBackendName());
             active.push_back("Fallback: " + fallbackProvider_->getBackendName());
             return active;
         }
@@ -575,6 +626,40 @@ namespace alpaka::tensor
                     return;
             }
             ops::fallback::gemm(*exec_, *device_, *queue_, M, N, K, alpha, A, B, beta, C);
+        }
+
+        template<typename ComplexT>
+        void fft(
+            tensor::Tensor1D<ComplexT, TDevice>& input,
+            tensor::Tensor1D<ComplexT, TDevice>& output,
+            ops::FftParams const& params)
+        {
+            static_assert(
+                std::is_same_v<ComplexT, std::complex<float>> || std::is_same_v<ComplexT, std::complex<double>>,
+                "FFT currently supports complex float32/float64 tensors");
+
+            auto& provider = getFftProvider();
+            if(provider.supportsOperation(OpType::FFT))
+            {
+                bool handled = detail::backend_dispatch<Exec>::fft(
+                    provider,
+                    [&](auto& typedProvider)
+                    {
+                        typedProvider.template fft<ComplexT, TExec, TDevice, TQueue>(
+                            *exec_,
+                            *device_,
+                            *queue_,
+                            input,
+                            output,
+                            params);
+                    });
+                if(handled)
+                    return;
+
+                if(provider.fft_status(*exec_, *device_, *queue_, input, output, params) == OpStatus::Success)
+                    return;
+            }
+            ops::fallback::fft(*exec_, *device_, *queue_, input, output, params);
         }
 
         template<typename T>
