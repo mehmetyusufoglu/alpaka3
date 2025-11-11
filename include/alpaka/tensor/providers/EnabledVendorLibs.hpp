@@ -20,6 +20,12 @@ namespace alpaka::tensor
         static constexpr bool hasCUDNN = false;
 #endif
 
+#ifdef ALPAKA_HAS_CUFFT
+        static constexpr bool hasCUFFT = true;
+#else
+        static constexpr bool hasCUFFT = false;
+#endif
+
 #ifdef ALPAKA_HAS_ROCBLAS
         static constexpr bool hasROCBLAS = true;
 #else

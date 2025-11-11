@@ -16,6 +16,7 @@ namespace alpaka::tensor
 {
     class CuBLASProvider;
     class CuDNNProvider;
+    class CuFFTProvider;
     class RocBLASProvider;
     class MIOpenProvider;
 } // namespace alpaka::tensor
@@ -25,6 +26,9 @@ namespace alpaka::tensor
 #endif
 #ifdef ALPAKA_HAS_CUDNN
 #    include <alpaka/tensor/providers/CuDNNProvider.hpp>
+#endif
+#ifdef ALPAKA_HAS_CUFFT
+#    include <alpaka/tensor/providers/CuFFTProvider.hpp>
 #endif
 
 #ifdef ALPAKA_HAS_ROCBLAS
@@ -74,6 +78,19 @@ namespace alpaka::tensor
     template<typename Exec>
     using select_gemm_provider_t = typename select_gemm_provider<Exec>::type;
 
+    // Compile-time provider selection (FFT)
+    template<typename Exec>
+    struct select_fft_provider
+    {
+        using type = std::conditional_t<
+            (std::is_same_v<Exec, alpaka::exec::GpuCuda> && EnabledVendorLibs::hasCUFFT),
+            CuFFTProvider,
+            DefaultProvider>;
+    };
+
+    template<typename Exec>
+    using select_fft_provider_t = typename select_fft_provider<Exec>::type;
+
     // Unified provider for all ops (future: merge handles)
     template<typename Exec>
     struct select_unified_provider
@@ -96,6 +113,14 @@ namespace alpaka::tensor
         static std::unique_ptr<IOpProvider> makeGemm()
         {
             using P = select_gemm_provider_t<Exec>;
+            static_assert(std::is_base_of_v<IOpProvider, P>, "Selected provider must implement IOpProvider");
+            return std::unique_ptr<IOpProvider>(new P());
+        }
+
+        template<typename Exec>
+        static std::unique_ptr<IOpProvider> makeFft()
+        {
+            using P = select_fft_provider_t<Exec>;
             static_assert(std::is_base_of_v<IOpProvider, P>, "Selected provider must implement IOpProvider");
             return std::unique_ptr<IOpProvider>(new P());
         }

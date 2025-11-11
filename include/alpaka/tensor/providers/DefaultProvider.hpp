@@ -31,6 +31,7 @@ namespace alpaka::tensor
             case OpType::BatchNorm:
             case OpType::Pooling:
             case OpType::Activation:
+            case OpType::FFT:
                 return true;
             default:
                 return false;
@@ -117,6 +118,18 @@ namespace alpaka::tensor
             tensor::Tensor1D<float, Device>& C)
         {
             ops::fallback::gemm(exec, device, queue, M, N, K, alpha, A, B, beta, C);
+        }
+
+        template<typename ComplexT, typename Exec, typename Device, typename Queue>
+        void fft(
+            Exec const& exec,
+            Device const& device,
+            Queue& queue,
+            tensor::Tensor1D<ComplexT, Device>& input,
+            tensor::Tensor1D<ComplexT, Device>& output,
+            ops::FftParams const& params)
+        {
+            ops::fallback::fft(exec, device, queue, input, output, params);
         }
 
         template<typename T, typename Exec, typename Device, typename Queue>

@@ -7,12 +7,17 @@
 
 #include <alpaka/tensor/ops/convolution/Conv2D.hpp>
 #include <alpaka/tensor/ops/elementwise/ActivationOps.hpp>
+#include <alpaka/tensor/ops/fft/NaiveFft.hpp>
 #include <alpaka/tensor/ops/linear/Gemm.hpp>
 #include <alpaka/tensor/ops/normalization/BatchNorm.hpp>
 #include <alpaka/tensor/ops/pooling/Pooling.hpp>
 #include <alpaka/tensor/ops/pooling/PoolingTypes.hpp>
 
+#include <complex>
 #include <cstddef>
+#include <span>
+#include <type_traits>
+#include <vector>
 
 namespace alpaka::tensor::ops::fallback
 {
@@ -43,6 +48,44 @@ namespace alpaka::tensor::ops::fallback
         tensor::Tensor1D<float, Device>& C)
     {
         ::alpaka::tensor::ops::gemm(exec, device, queue, 'N', 'N', M, N, K, alpha, A, B, beta, C);
+    }
+
+    template<typename ComplexT, typename Exec, typename Device, typename Queue>
+    void fft(
+        Exec const& exec,
+        Device const& device,
+        Queue& queue,
+        tensor::Tensor1D<ComplexT, Device>& input,
+        tensor::Tensor1D<ComplexT, Device>& output,
+        ops::FftParams const& params)
+    {
+        static_assert(
+            std::is_same_v<ComplexT, std::complex<float>> || std::is_same_v<ComplexT, std::complex<double>>,
+            "Fallback FFT requires std::complex<float> or std::complex<double>");
+
+        (void) exec;
+
+        input.toHost(device, queue);
+        std::span<ComplexT const> inputSpan{input.hostData(), input.size()};
+
+        std::vector<ComplexT> hostOutput(inputSpan.size());
+        std::span<ComplexT> outputSpan{hostOutput.data(), hostOutput.size()};
+
+        ops::fft::naiveNdFft(inputSpan, outputSpan, params);
+
+        if(&input == &output)
+        {
+            auto* hostData = input.hostData();
+            std::copy(hostOutput.begin(), hostOutput.end(), hostData);
+            input.markHostModified();
+        }
+        else
+        {
+            output.toHost(device, queue);
+            auto* hostData = output.hostData();
+            std::copy(hostOutput.begin(), hostOutput.end(), hostData);
+            output.markHostModified();
+        }
     }
 
     template<typename T, typename Exec, typename Device, typename Queue>

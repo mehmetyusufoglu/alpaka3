@@ -15,6 +15,7 @@ message(STATUS "Running global CUDA detection...")
 # reset cached capability flags before probing to avoid stale values on re-configure
 set(ALPAKA_HAS_CUDA_TOOLKIT FALSE CACHE INTERNAL "CUDA Toolkit detected" FORCE)
 set(ALPAKA_HAS_CUBLAS FALSE CACHE INTERNAL "cuBLAS detected" FORCE)
+set(ALPAKA_HAS_CUFFT FALSE CACHE INTERNAL "cuFFT detected" FORCE)
 set(ALPAKA_HAS_CUDNN FALSE CACHE INTERNAL "cuDNN detected" FORCE)
 set(ALPAKA_HAS_NCCL FALSE CACHE INTERNAL "NCCL detected" FORCE)
 unset(ALPAKA_CUDNN_LIBRARY CACHE)
@@ -30,6 +31,9 @@ if(CUDAToolkit_FOUND)
 
     if(NOT TARGET CUDA::cublas)
         find_package(CUDAToolkit QUIET COMPONENTS cublas)
+    endif()
+    if(NOT TARGET CUDA::cufft)
+        find_package(CUDAToolkit QUIET COMPONENTS cufft)
     endif()
     if(TARGET CUDA::cublas)
         # Try to resolve the actual shared object path for sanity (best-effort static hint)
@@ -50,6 +54,26 @@ if(CUDAToolkit_FOUND)
         endif()
     else()
         message(STATUS "cuBLAS not found -> using generic kernels")
+    endif()
+
+    if(TARGET CUDA::cufft)
+        get_target_property(_cufft_imported_loc CUDA::cufft IMPORTED_LOCATION)
+        if(NOT _cufft_imported_loc AND DEFINED CUDAToolkit_LIBRARY_DIR)
+            find_library(_cufft_probe NAMES cufft PATHS ${CUDAToolkit_LIBRARY_DIR})
+            set(_cufft_imported_loc ${_cufft_probe})
+        endif()
+        if(_cufft_imported_loc AND EXISTS "${_cufft_imported_loc}")
+            message(STATUS "cuFFT target + library detected: ${_cufft_imported_loc}")
+            set(ALPAKA_HAS_CUFFT TRUE CACHE INTERNAL "cuFFT detected" FORCE)
+            if(NOT alpaka_DISABLE_VENDOR_RPATH)
+                get_filename_component(_cufft_dir "${_cufft_imported_loc}" DIRECTORY)
+                list(APPEND ALPAKA_VENDOR_RPATH "${_cufft_dir}")
+            endif()
+        else()
+            message(WARNING "cuFFT detected but library path unresolved -> FFT providers will fall back")
+        endif()
+    else()
+        message(STATUS "cuFFT not found -> FFT providers will fall back to generic implementations")
     endif()
 
     # cuDNN library lookup (optional)
@@ -135,6 +159,7 @@ if(TARGET alpaka_target_headers)
         alpaka_target_headers
         INTERFACE
             $<$<BOOL:${ALPAKA_HAS_CUBLAS}>:ALPAKA_HAS_CUBLAS>
+            $<$<BOOL:${ALPAKA_HAS_CUFFT}>:ALPAKA_HAS_CUFFT>
             $<$<BOOL:${ALPAKA_HAS_CUDNN}>:ALPAKA_HAS_CUDNN>
             $<$<BOOL:${ALPAKA_HAS_NCCL}>:ALPAKA_HAS_NCCL>
     )
@@ -157,7 +182,11 @@ macro(alpaka_add_cuda_support TARGET_NAME)
         # Ensure CUDA imported targets are available to consumers when we actually link them
         if(ALPAKA_HAS_CUBLAS AND NOT TARGET CUDA::cublas)
             find_package(CUDAToolkit REQUIRED COMPONENTS cublas)
-        elseif(NOT TARGET CUDA::cudart)
+        endif()
+        if(ALPAKA_HAS_CUFFT AND NOT TARGET CUDA::cufft)
+            find_package(CUDAToolkit REQUIRED COMPONENTS cufft)
+        endif()
+        if(NOT TARGET CUDA::cudart)
             # At minimum ensure cudart is available if CUDA toolkit was found
             find_package(CUDAToolkit REQUIRED)
         endif()
@@ -170,6 +199,17 @@ macro(alpaka_add_cuda_support TARGET_NAME)
             message(
                 WARNING
                 "cuBLAS reported available but CUDA::cublas target missing for ${TARGET_NAME}; skipping linkage"
+            )
+        endif()
+
+        if(ALPAKA_HAS_CUFFT AND TARGET CUDA::cufft)
+            message(STATUS "Linking cuFFT into ${TARGET_NAME}")
+            target_link_libraries(${TARGET_NAME} PUBLIC CUDA::cufft)
+            target_compile_definitions(${TARGET_NAME} PRIVATE ALPAKA_HAS_CUFFT)
+        elseif(ALPAKA_HAS_CUFFT)
+            message(
+                WARNING
+                "cuFFT reported available but CUDA::cufft target missing for ${TARGET_NAME}; skipping linkage"
             )
         endif()
 

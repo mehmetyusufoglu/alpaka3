@@ -14,6 +14,7 @@ namespace alpaka::tensor
     // Forward declarations to avoid pulling heavy provider headers.
     class CuBLASProvider;
     class CuDNNProvider;
+    class CuFFTProvider;
     class DefaultProvider;
     class RocBLASProvider;
     class MIOpenProvider;
@@ -28,6 +29,7 @@ namespace alpaka::tensor::providers
         bool batchNorm = false;
         bool activation = false;
         bool pooling = false;
+        bool fft = false;
     };
 
     template<typename Provider>
@@ -52,6 +54,8 @@ namespace alpaka::tensor::providers
                 return flags.activation;
             case OpType::Pooling:
                 return flags.pooling;
+            case OpType::FFT:
+                return flags.fft;
             }
             return false;
         }
@@ -73,7 +77,7 @@ namespace alpaka::tensor::providers
     [[nodiscard]] constexpr bool provides_any() noexcept
     {
         auto f = caps<Provider>();
-        return f.gemm || f.conv2d || f.batchNorm || f.activation || f.pooling;
+        return f.gemm || f.conv2d || f.batchNorm || f.activation || f.pooling || f.fft;
     }
 
     // ------------------------------------------------------------------
@@ -84,7 +88,7 @@ namespace alpaka::tensor::providers
     struct provider_caps<::alpaka::tensor::DefaultProvider>
     {
         static constexpr CapabilityFlags
-            value{.gemm = true, .conv2d = true, .batchNorm = true, .activation = true, .pooling = true};
+            value{.gemm = true, .conv2d = true, .batchNorm = true, .activation = true, .pooling = true, .fft = true};
     };
 
     template<>
@@ -113,6 +117,18 @@ namespace alpaka::tensor::providers
             .batchNorm = false,
             .activation = false,
             .pooling = false
+#endif
+        };
+    };
+
+    template<>
+    struct provider_caps<::alpaka::tensor::CuFFTProvider>
+    {
+        static constexpr CapabilityFlags value{
+#ifdef ALPAKA_HAS_CUFFT
+            .fft = true
+#else
+            .fft = false
 #endif
         };
     };

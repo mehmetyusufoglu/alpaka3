@@ -6,6 +6,8 @@
 
 #include <alpaka/tensor/core/TensorTypes.hpp>
 
+#include <array>
+#include <complex>
 #include <concepts>
 #include <cstddef>
 #include <string>
@@ -19,7 +21,8 @@ namespace alpaka::tensor
         GEMM,
         BatchNorm,
         Pooling,
-        Activation
+        Activation,
+        FFT
     };
 
     enum class OpStatus
@@ -34,6 +37,55 @@ namespace alpaka::tensor
     {
         struct Conv2DParams;
         struct Pool2DParams;
+
+        enum class FftTransformType
+        {
+            ComplexToComplex,
+            RealToComplex,
+            ComplexToReal
+        };
+
+        enum class FftDirection
+        {
+            Forward,
+            Inverse
+        };
+
+        enum class FftNumericType
+        {
+            ComplexFloat32,
+            ComplexFloat64
+        };
+
+        struct FftParams
+        {
+            std::array<std::size_t, 3> lengths{1, 1, 1};
+            unsigned int rank = 1;
+            std::size_t batch = 1;
+            FftTransformType transformType = FftTransformType::ComplexToComplex;
+            FftDirection direction = FftDirection::Forward;
+            bool inPlace = false;
+        };
+
+        namespace detail
+        {
+            template<typename ComplexT>
+            consteval FftNumericType deduceNumericType()
+            {
+                if constexpr(std::is_same_v<ComplexT, std::complex<float>>)
+                {
+                    return FftNumericType::ComplexFloat32;
+                }
+                else if constexpr(std::is_same_v<ComplexT, std::complex<double>>)
+                {
+                    return FftNumericType::ComplexFloat64;
+                }
+                else
+                {
+                    static_assert(sizeof(ComplexT) == 0, "Unsupported complex type for FFT provider");
+                }
+            }
+        } // namespace detail
     } // namespace ops
 
     // Polymorphic base (runtime optional). Type-erased virtual layer kept minimal.
@@ -130,6 +182,25 @@ namespace alpaka::tensor
                 static_cast<void*>(&out));
         }
 
+        template<typename ComplexT, typename Exec, typename Device, typename Queue>
+        OpStatus fft_status(
+            Exec const& exec,
+            Device const& device,
+            Queue& queue,
+            tensor::Tensor1D<ComplexT, Device>& input,
+            tensor::Tensor1D<ComplexT, Device>& output,
+            ops::FftParams const& params)
+        {
+            return fft_impl(
+                static_cast<void const*>(&exec),
+                static_cast<void const*>(&device),
+                static_cast<void*>(&queue),
+                static_cast<void*>(&input),
+                static_cast<void*>(&output),
+                params,
+                ops::detail::deduceNumericType<ComplexT>());
+        }
+
     protected:
         virtual OpStatus conv2d_impl(
             void const*,
@@ -173,6 +244,18 @@ namespace alpaka::tensor
         {
             return OpStatus::Unsupported;
         }
+
+        virtual OpStatus fft_impl(
+            void const*,
+            void const*,
+            void*,
+            void*,
+            void*,
+            ops::FftParams const&,
+            ops::FftNumericType)
+        {
+            return OpStatus::Unsupported;
+        }
     };
 
     // Concepts (lightweight detection of typed APIs)
@@ -181,6 +264,7 @@ namespace alpaka::tensor
         { p.getBackendName() } -> std::convertible_to<std::string>;
         { p.isActive() } -> std::convertible_to<bool>;
         { p.supportsOperation(OpType::Conv2D) } -> std::convertible_to<bool>;
+        { p.supportsOperation(OpType::FFT) } -> std::convertible_to<bool>;
         // TODO(ROCM): add optional compile-time query hooks for HIP feature flags if needed
     };
 
@@ -214,4 +298,17 @@ namespace alpaka::tensor
                                Tensor1D<float, Device>& C) {
                                   { p.gemm(e, d, q, M, N, K, alpha, A, B, beta, C) };
                               };
+
+    template<typename P, typename Exec, typename Device, typename Queue, typename ComplexT>
+    concept FftProvider = ProviderBase<P>
+                          && requires(
+                              P const& p,
+                              Exec const& e,
+                              Device const& d,
+                              Queue& q,
+                              tensor::Tensor1D<ComplexT, Device>& input,
+                              tensor::Tensor1D<ComplexT, Device>& output,
+                              ops::FftParams const& params) {
+                                 { p.fft(e, d, q, input, output, params) };
+                             };
 } // namespace alpaka::tensor

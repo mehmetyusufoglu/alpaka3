@@ -34,6 +34,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdlib>
+#include <exception>
 #include <iomanip>
 #include <iostream>
 #include <numbers>
@@ -58,6 +59,8 @@ namespace
     using collectiveFft::loadReferenceSpectrumFromFile;
     using collectiveFft::loadSignalChunk;
     using collectiveFft::MultiProcessBootstrap;
+    using collectiveFft::providerFftEnabled;
+    using collectiveFft::providerFftRequired;
     using collectiveFft::VerificationStats;
 
     [[nodiscard]] std::optional<int> parseEnvInt(char const* envName)
@@ -282,6 +285,24 @@ namespace
                 return 0;
             }
 
+            bool const providerFftAvailable
+                = tt::EnabledVendorLibs::hasCUFFT && context.supportsOperation(tt::OpType::FFT);
+            if(providerFftRequired(options) && !providerFftAvailable)
+            {
+                if(groupConfig.worldRank == 0)
+                {
+                    std::cerr
+                        << "cuFFT provider required (--force-provider-fft) but not available in this configuration."
+                        << '\n';
+                }
+                return 1;
+            }
+
+            if(providerFftEnabled(options) && !providerFftAvailable && groupConfig.worldRank == 0)
+            {
+                std::cout << "cuFFT provider unavailable; defaulting to host-side DFT for local spectra." << '\n';
+            }
+
             std::vector<std::complex<float>> localSamples;
             std::string chunkError;
             bool const chunkOk = loadSignalChunk(
@@ -312,9 +333,67 @@ namespace
                 std::cout << "Generating synthetic multi-tone signal; provide --signal-file for real data.\n";
             }
 
-            // Version 1 pipeline step 3: compute the naive local DFT on the host.
-            auto const localSpectrum = computeLocalFft(localSamples);
-            // Version 1 pipeline step 4: apply stride-dependent phases and lay out global contributions.
+            std::vector<std::complex<float>> localSpectrum;
+            bool providerFftUsed = false;
+
+            if(providerFftEnabled(options) && providerFftAvailable)
+            {
+                try
+                {
+                    alpaka::tensor::ops::FftParams fftParams{};
+                    fftParams.rank = 1;
+                    fftParams.lengths = {samplesPerRank, 1, 1};
+                    fftParams.batch = 1;
+                    fftParams.transformType = alpaka::tensor::ops::FftTransformType::ComplexToComplex;
+                    fftParams.direction = alpaka::tensor::ops::FftDirection::Forward;
+                    fftParams.inPlace = false;
+
+                    tt::Tensor1D<std::complex<float>, Device> deviceInput(device, {samplesPerRank}, "fft-local-input");
+                    tt::Tensor1D<std::complex<float>, Device> deviceOutput(
+                        device,
+                        {samplesPerRank},
+                        "fft-local-output");
+
+                    auto* hostInput = deviceInput.hostData();
+                    std::copy(localSamples.begin(), localSamples.end(), hostInput);
+                    deviceInput.markHostModified();
+
+                    context.fft(deviceInput, deviceOutput, fftParams);
+
+                    deviceOutput.toHost(device, queue);
+                    alpaka::onHost::wait(queue);
+
+                    auto* hostOutput = deviceOutput.hostData();
+                    localSpectrum.assign(hostOutput, hostOutput + samplesPerRank);
+                    providerFftUsed = true;
+                }
+                catch(std::exception const& ex)
+                {
+                    if(providerFftRequired(options))
+                    {
+                        std::cerr << "Rank " << groupConfig.worldRank << " failed cuFFT execution: " << ex.what()
+                                  << '\n';
+                        return 1;
+                    }
+                    if(groupConfig.worldRank == 0)
+                    {
+                        std::cout << "cuFFT provider unavailable for local spectra (" << ex.what()
+                                  << ") – falling back to host-side DFT." << '\n';
+                    }
+                    localSpectrum.clear();
+                }
+            }
+
+            if(localSpectrum.empty())
+            {
+                localSpectrum = computeLocalFft(localSamples);
+            }
+            else if(providerFftUsed && groupConfig.worldRank == 0)
+            {
+                std::cout << "cuFFT being used for per-rank FFT computation." << '\n';
+            }
+
+            // Version 2 pipeline step 4: apply stride-dependent phases and lay out global contributions.
             auto contributions
                 = buildRankContribution(localSpectrum, groupConfig.worldRank, participantCount, globalSamples);
 
