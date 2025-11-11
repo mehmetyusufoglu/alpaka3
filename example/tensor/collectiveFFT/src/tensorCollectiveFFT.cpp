@@ -1106,8 +1106,9 @@ namespace
                     std::string fullSignalError;
                     if(loadFullSignalSequence(options, globalSamples, fullSignal, fullSignalError))
                     {
-                        auto const directSpectrum = computeLocalFft(
-                            std::span<std::complex<float> const>{fullSignal.data(), fullSignal.size()});
+                        auto const directSpectrum = computeLocalFftWithPrecision(
+                            std::span<std::complex<float> const>{fullSignal.data(), fullSignal.size()},
+                            options.verifyPrecision);
                         verificationPerformed = true;
                         verificationSucceeded
                             = performVerification(directSpectrum, "direct naive DFT") && verificationSucceeded;
