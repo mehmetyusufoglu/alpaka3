@@ -1024,6 +1024,22 @@ namespace
 
             if(groupConfig.worldRank == 0)
             {
+                std::cout << "Verification settings: direct=" << (options.verifyDirect ? "on" : "off")
+                          << ", reference=" << (options.referenceFftFile ? "path supplied" : "none")
+                          << ", abs tol=" << options.verifyAbsTolerance << ", rel tol=" << options.verifyRelTolerance
+                          << '\n';
+
+                if(options.verifyDirect)
+                {
+                    std::cout << "Direct DFT precision: "
+                              << (options.verifyPrecision == DirectVerifyPrecision::Float64 ? "float64" : "float32")
+                              << "\n";
+                }
+                if(options.referenceFftFile)
+                {
+                    std::cout << "Reference FFT file: " << *options.referenceFftFile << '\n';
+                }
+
                 // Version 1 pipeline step 9: compare the distributed result against direct and file-based references.
                 auto performVerification
                     = [&](std::vector<std::complex<float>> const& reference, std::string_view sourceLabel)
