@@ -94,6 +94,7 @@ namespace
     };
 
 #ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
+    // Version 1 pipeline step 1: parse command line and environment to set up multi-rank execution.
     MultiProcessBootstrap prepareBootstrap(int& argc, char**& argv)
     {
         MultiProcessBootstrap bootstrap{};
@@ -291,6 +292,7 @@ namespace
         std::vector<std::string> warnings{};
     };
 
+    // Version 1 pipeline step 1 (continued): interpret CLI flags for data sourcing and verification.
     CommandLineOptions parseCommandLine(int argc, char** argv)
     {
         CommandLineOptions options{};
@@ -436,6 +438,7 @@ namespace
         return base + overtone + envelope;
     }
 
+    // Version 1 pipeline step 2: each rank prepares its strided samples from file or synthetic generator.
     bool loadSignalChunk(
         CommandLineOptions const& options,
         std::size_t samplesPerRank,
@@ -497,6 +500,7 @@ namespace
         return true;
     }
 
+    // Version 1 pipeline step 8: rank 0 rebuilds the contiguous signal for reference DFTs.
     bool loadFullSignalSequence(
         CommandLineOptions const& options,
         std::size_t totalSamples,
@@ -507,6 +511,7 @@ namespace
         if(totalSamples == 0)
             return true;
 
+        // Version 1 pipeline step 8: rebuild the contiguous input so rank 0 can run the direct DFT.
         if(options.signalFile)
         {
             std::ifstream input(options.signalFile->c_str(), std::ios::binary);
@@ -555,6 +560,7 @@ namespace
         return true;
     }
 
+    // Version 1 pipeline step 8 (optional): load an external FFT for comparison.
     bool loadReferenceSpectrumFromFile(
         std::string const& path,
         std::size_t totalSamples,
@@ -605,6 +611,7 @@ namespace
         return true;
     }
 
+    // Version 1 pipeline step 9: gather statistics when checking the distributed result.
     struct VerificationStats
     {
         float maxAbsError = 0.0f;
@@ -613,6 +620,7 @@ namespace
         std::size_t failureCount = 0;
     };
 
+    // Version 1 pipeline step 9: compare NCCL result against reference spectra using tolerances.
     bool compareSpectra(
         std::span<std::complex<float> const> computed,
         std::span<std::complex<float> const> reference,
@@ -655,6 +663,7 @@ namespace
         return stats.failureCount == 0;
     }
 
+    // Version 1 pipeline step 3: naive O(n^2) DFT used for both float and double precision.
     template<typename Float>
     std::vector<std::complex<Float>> computeLocalFftGeneric(std::span<std::complex<Float> const> samples)
     {
@@ -715,7 +724,7 @@ namespace
         return spectrum;
     }
 
-    // Compose the global spectrum contribution for this rank by applying offset-dependent phase factors.
+    // Version 1 pipeline step 4: compose the global spectrum contribution for this rank using phase correction.
     std::vector<std::complex<float>> buildRankContribution(
         std::span<std::complex<float> const> localSpectrum,
         int worldRank,
@@ -953,10 +962,13 @@ namespace
                 std::cout << "Generating synthetic multi-tone signal; provide --signal-file for real data.\n";
             }
 
+            // Version 1 pipeline step 3: compute the naive local DFT on the host.
             auto const localSpectrum = computeLocalFft(localSamples);
+            // Version 1 pipeline step 4: apply stride-dependent phases and lay out global contributions.
             auto contributions
                 = buildRankContribution(localSpectrum, groupConfig.worldRank, participantCount, globalSamples);
 
+            // Version 1 pipeline step 5: stage contributions in an alpaka tensor and move to the CUDA device.
             std::vector<float> interleaved(contributions.size() * 2U, 0.0f);
             for(std::size_t k = 0; k < contributions.size(); ++k)
             {
@@ -987,6 +999,7 @@ namespace
             request.dataType = collective::DataType::Float32;
             request.reduceOp = collective::ReduceOp::Sum;
 
+            // Version 1 pipeline step 6: use NCCL all-reduce on device memory to assemble the global FFT.
             auto const reduceStatus = context.collectiveAllReduce(request);
             if(reduceStatus != tt::OpStatus::Success)
             {
@@ -995,6 +1008,7 @@ namespace
                 return 1;
             }
 
+            // Version 1 pipeline step 7: bring the merged spectrum back to host space for inspection.
             spectralTensor.markDeviceModified(device, queue);
             spectralTensor.toHost(device, queue);
             alpaka::onHost::wait(queue);
@@ -1010,6 +1024,7 @@ namespace
 
             if(groupConfig.worldRank == 0)
             {
+                // Version 1 pipeline step 9: compare the distributed result against direct and file-based references.
                 auto performVerification
                     = [&](std::vector<std::complex<float>> const& reference, std::string_view sourceLabel)
                 {

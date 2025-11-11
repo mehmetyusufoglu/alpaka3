@@ -108,6 +108,18 @@ Adjust tolerances as needed to match the precision of upstream generators. Disab
 the direct check with `--skip-verify` when using very large signals or when an
 external FFT provides the baseline.
 
+## Version 1 Pipeline Overview
+
+1. **Command-line parsing (rank 0 CPU)** – read options, choose synthetic vs. file-backed signal, decide verification mode and precision.
+2. **Signal preparation (all rank CPUs)** – load each rank’s strided samples from disk or synthesize them in `loadSignalChunk`/`loadFullSignalSequence`.
+3. **Local DFT (all rank CPUs)** – run the naive O(n²) transform with `computeLocalFft` to obtain the per-rank spectrum.
+4. **Phase compensation (all rank CPUs)** – expand the strided spectrum into global contributions via `buildRankContribution`.
+5. **GPU staging (all ranks)** – interleave contributions into an alpaka tensor and move it to the CUDA device with `ensureOnDevice`.
+6. **Collective reduction (all GPUs)** – invoke NCCL all-reduce to sum contributions so every rank holds the full FFT on device memory.
+7. **Host retrieval (all ranks)** – copy the reduced tensor back to host (`toHost`/`wait`) for inspection.
+8. **Reference assembly (rank 0 CPU)** – rebuild the full signal, run the high-precision DFT (`computeLocalFftWithPrecision`), optionally read a reference spectrum.
+9. **Verification and reporting (rank 0 CPU)** – compare spectra with `compareSpectra`, print results, and emit the final success banner.
+
 ## Troubleshooting Notes
 
 - Missing CUDA/NCCL: the executable falls back to host executors and prints a
