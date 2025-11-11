@@ -14,6 +14,11 @@
  * DFT with cuFFT (or another vendor FFT) and slot into a multi-node cuFFT strategy
  * once the orchestration pattern shown here is validated.
  */
+#include "collectiveFft/bootstrap.hpp"
+#include "collectiveFft/dataSource.hpp"
+#include "collectiveFft/options.hpp"
+#include "collectiveFft/verification.hpp"
+
 #include <alpaka/alpaka.hpp>
 #include <alpaka/onHost/example/executors.hpp>
 #include <alpaka/onHost/executeForEach.hpp>
@@ -29,12 +34,8 @@
 #include <complex>
 #include <cstddef>
 #include <cstdlib>
-#include <cstring>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <iterator>
-#include <limits>
 #include <numbers>
 #include <optional>
 #include <span>
@@ -43,19 +44,22 @@
 #include <type_traits>
 #include <vector>
 
-#ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
-#    include <mpi.h>
-#endif
-
-#ifdef ALPAKA_HAS_NCCL
-#    include <nccl.h>
-#endif
-
 namespace tt = alpaka::tensor;
 namespace collective = alpaka::tensor::collective;
 
 namespace
 {
+    using collectiveFft::CommandLineOptions;
+    using collectiveFft::compareSpectra;
+    using collectiveFft::computeLocalFft;
+    using collectiveFft::computeLocalFftWithPrecision;
+    using collectiveFft::DirectVerifyPrecision;
+    using collectiveFft::loadFullSignalSequence;
+    using collectiveFft::loadReferenceSpectrumFromFile;
+    using collectiveFft::loadSignalChunk;
+    using collectiveFft::MultiProcessBootstrap;
+    using collectiveFft::VerificationStats;
+
     [[nodiscard]] std::optional<int> parseEnvInt(char const* envName)
     {
         if(char const* value = std::getenv(envName))
@@ -70,658 +74,22 @@ namespace
         return std::nullopt;
     }
 
-    template<std::size_t N>
-    [[nodiscard]] std::optional<int> parseFirstEnvInt(std::array<char const*, N> const& envNames)
+    [[nodiscard]] std::optional<int> discoverLocalRank(MultiProcessBootstrap const& bootstrap)
     {
-        for(auto const* name : envNames)
-        {
-            if(auto parsed = parseEnvInt(name))
-                return parsed;
-        }
-        return std::nullopt;
-    }
+        if(bootstrap.localRank >= 0)
+            return bootstrap.localRank;
 
-    struct MultiProcessBootstrap
-    {
-        bool enabled = false;
-        bool finalizeMpi = false;
-        int worldRank = 0;
-        int worldSize = 1;
-        int localRank = -1;
-        int localSize = -1;
-        std::string disableReason{};
-        std::vector<std::byte> uniqueId{};
-    };
-
-#ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
-    // Version 1 pipeline step 1: parse command line and environment to set up multi-rank execution.
-    MultiProcessBootstrap prepareBootstrap(int& argc, char**& argv)
-    {
-        MultiProcessBootstrap bootstrap{};
-        int initialized = 0;
-        auto const initQueryStatus = MPI_Initialized(&initialized);
-        if(initQueryStatus != MPI_SUCCESS)
-        {
-            bootstrap.disableReason = "MPI_Initialized failed with status=" + std::to_string(initQueryStatus);
-            return bootstrap;
-        }
-
-        if(!initialized)
-        {
-            int provided = MPI_THREAD_SINGLE;
-            auto const initStatus = MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
-            if(initStatus != MPI_SUCCESS)
-            {
-                bootstrap.disableReason = "MPI_Init_thread failed with status=" + std::to_string(initStatus);
-                return bootstrap;
-            }
-            bootstrap.finalizeMpi = true;
-        }
-
-        auto const commSizeStatus = MPI_Comm_size(MPI_COMM_WORLD, &bootstrap.worldSize);
-        if(commSizeStatus != MPI_SUCCESS)
-        {
-            bootstrap.disableReason = "MPI_Comm_size failed with status=" + std::to_string(commSizeStatus);
-            bootstrap.worldSize = 1;
-        }
-
-        auto const commRankStatus = MPI_Comm_rank(MPI_COMM_WORLD, &bootstrap.worldRank);
-        if(commRankStatus != MPI_SUCCESS)
-        {
-            bootstrap.disableReason = "MPI_Comm_rank failed with status=" + std::to_string(commRankStatus);
-            bootstrap.worldRank = 0;
-        }
-        bootstrap.enabled = bootstrap.worldSize > 1;
-
-        if(bootstrap.worldSize > 1)
-        {
-            MPI_Comm localComm = MPI_COMM_NULL;
-            auto const splitStatus = MPI_Comm_split_type(
-                MPI_COMM_WORLD,
-                MPI_COMM_TYPE_SHARED,
-                bootstrap.worldRank,
-                MPI_INFO_NULL,
-                &localComm);
-            if(splitStatus == MPI_SUCCESS && localComm != MPI_COMM_NULL)
-            {
-                MPI_Comm_rank(localComm, &bootstrap.localRank);
-                MPI_Comm_size(localComm, &bootstrap.localSize);
-                MPI_Comm_free(&localComm);
-            }
-            else
-            {
-                bootstrap.localRank = bootstrap.worldRank;
-                bootstrap.localSize = bootstrap.worldSize;
-            }
-        }
-        else
-        {
-            bootstrap.localRank = 0;
-            bootstrap.localSize = 1;
-        }
-
-#    ifdef ALPAKA_HAS_NCCL
-        if(bootstrap.enabled)
-        {
-            ncclUniqueId id{};
-            if(bootstrap.worldRank == 0)
-            {
-                auto const result = ncclGetUniqueId(&id);
-                if(result != ncclSuccess)
-                {
-                    std::cerr << "ncclGetUniqueId failed with status=" << static_cast<int>(result)
-                              << "; multi-rank NCCL disabled.\n";
-                    bootstrap.enabled = false;
-                    bootstrap.disableReason
-                        = "ncclGetUniqueId failed with status=" + std::to_string(static_cast<int>(result));
-                }
-            }
-
-            int const broadcastResult
-                = MPI_Bcast(&id, static_cast<int>(sizeof(ncclUniqueId)), MPI_BYTE, 0, MPI_COMM_WORLD);
-            if(broadcastResult != MPI_SUCCESS)
-            {
-                std::cerr << "MPI_Bcast failed while distributing NCCL unique ID; multi-rank NCCL disabled.\n";
-                bootstrap.enabled = false;
-                bootstrap.disableReason = "MPI_Bcast failed while distributing NCCL unique ID (status="
-                                          + std::to_string(broadcastResult) + ")";
-            }
-            int enabledFlag = bootstrap.enabled ? 1 : 0;
-            MPI_Bcast(&enabledFlag, 1, MPI_INT, 0, MPI_COMM_WORLD);
-            bootstrap.enabled = enabledFlag != 0;
-
-            if(bootstrap.enabled)
-            {
-                bootstrap.uniqueId.resize(sizeof(ncclUniqueId));
-                std::memcpy(bootstrap.uniqueId.data(), &id, sizeof(ncclUniqueId));
-            }
-            else
-            {
-                bootstrap.uniqueId.clear();
-            }
-        }
-#    else
-        if(bootstrap.enabled)
-        {
-            bootstrap.disableReason = "NCCL support not enabled in this build.";
-            bootstrap.enabled = false;
-            bootstrap.uniqueId.clear();
-        }
-#    endif
-
-        if(bootstrap.worldSize > 1)
-        {
-            int enabledFlag = bootstrap.enabled ? 1 : 0;
-            MPI_Bcast(&enabledFlag, 1, MPI_INT, 0, MPI_COMM_WORLD);
-            bootstrap.enabled = enabledFlag != 0;
-
-            int reasonLength = static_cast<int>(bootstrap.disableReason.size());
-            MPI_Bcast(&reasonLength, 1, MPI_INT, 0, MPI_COMM_WORLD);
-            if(bootstrap.worldRank != 0)
-            {
-                bootstrap.disableReason.resize(static_cast<std::size_t>(reasonLength));
-            }
-            if(reasonLength > 0)
-            {
-                MPI_Bcast(bootstrap.disableReason.data(), reasonLength, MPI_CHAR, 0, MPI_COMM_WORLD);
-            }
-        }
-
-        return bootstrap;
-    }
-#else
-    if(globalSamples > (1U << 15))
-    {
-        std::cout << "Running naive O(n^2) verification for " << globalSamples << " samples ("
-                  << (options.verifyPrecision == DirectVerifyPrecision::Float64 ? "double" : "float")
-                  << " precision); this may take a while.\n";
-        static constexpr std::array<char const*, 2> worldRankKeys{"OMPI_COMM_WORLD_RANK", "RANK"};
-        static constexpr std::array<char const*, 4> localRankKeys{
+        static constexpr std::array<char const*, 4> envKeys{
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "SLURM_LOCALID",
             "LOCAL_RANK"};
-        auto const directSpectrum = computeLocalFftWithPrecision(
-            std::span<std::complex<float> const>{fullSignal.data(), fullSignal.size()},
-            options.verifyPrecision);
-        bootstrap.worldSize = *worldSize;
-        if(auto worldRank = parseFirstEnvInt(worldRankKeys))
-            bootstrap.worldRank = *worldRank;
-        if(auto localRank = parseFirstEnvInt(localRankKeys))
-            bootstrap.localRank = *localRank;
-        else
-            bootstrap.localRank = bootstrap.worldRank;
-
-        bootstrap.localSize = bootstrap.worldSize;
-        bootstrap.enabled = false;
-        bootstrap.disableReason = "Demo built without MPI support; rebuild with MPI to enable multi-rank collectives.";
-
-        return bootstrap;
-    }
-#endif
-
-    void finalizeBootstrap(MultiProcessBootstrap& bootstrap)
-    {
-#ifdef ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI
-        if(bootstrap.finalizeMpi)
+        for(auto const* key : envKeys)
         {
-            MPI_Finalize();
-            bootstrap.finalizeMpi = false;
+            if(auto const value = parseEnvInt(key))
+                return value;
         }
-#else
-        static_cast<void>(bootstrap);
-#endif
-    }
-
-    enum class DirectVerifyPrecision
-    {
-        Float32,
-        Float64
-    };
-
-    struct CommandLineOptions
-    {
-        std::size_t signalLength = 16384;
-        std::optional<std::string> signalFile{};
-        std::size_t previewBins = 12;
-        bool verifyDirect = true;
-        std::optional<std::string> referenceFftFile{};
-        float verifyAbsTolerance = 1.0e-4f;
-        float verifyRelTolerance = 1.0e-3f;
-        DirectVerifyPrecision verifyPrecision = DirectVerifyPrecision::Float64;
-        std::vector<std::string> warnings{};
-    };
-
-    // Version 1 pipeline step 1 (continued): interpret CLI flags for data sourcing and verification.
-    CommandLineOptions parseCommandLine(int argc, char** argv)
-    {
-        CommandLineOptions options{};
-        constexpr std::string_view lengthPrefix{"--signal-length="};
-        constexpr std::string_view filePrefix{"--signal-file="};
-        constexpr std::string_view previewPrefix{"--preview-bins="};
-        constexpr std::string_view referencePrefix{"--reference-fft="};
-        constexpr std::string_view absTolPrefix{"--verify-abs="};
-        constexpr std::string_view relTolPrefix{"--verify-rel="};
-        constexpr std::string_view verifyFlag{"--verify-direct"};
-        constexpr std::string_view skipVerifyFlag{"--skip-verify"};
-        constexpr std::string_view precisionPrefix{"--verify-direct-precision="};
-
-        for(int i = 1; i < argc; ++i)
-        {
-            std::string_view arg(argv[i]);
-            if(arg.rfind(lengthPrefix, 0) == 0)
-            {
-                std::string value(arg.substr(lengthPrefix.size()));
-                char* end = nullptr;
-                unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
-                if(end == value.c_str() || parsed == 0ULL)
-                {
-                    options.warnings.emplace_back(
-                        "Ignoring invalid --signal-length value '" + value + "'; keeping default.");
-                }
-                else
-                {
-                    options.signalLength = static_cast<std::size_t>(parsed);
-                }
-            }
-            else if(arg.rfind(filePrefix, 0) == 0)
-            {
-                std::string path(arg.substr(filePrefix.size()));
-                if(path.empty())
-                {
-                    options.warnings.emplace_back("Ignoring empty --signal-file argument.");
-                }
-                else
-                {
-                    options.signalFile = std::move(path);
-                }
-            }
-            else if(arg.rfind(previewPrefix, 0) == 0)
-            {
-                std::string value(arg.substr(previewPrefix.size()));
-                char* end = nullptr;
-                unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
-                if(end == value.c_str() || parsed == 0ULL)
-                {
-                    options.warnings.emplace_back(
-                        "Ignoring invalid --preview-bins value '" + value + "'; keeping default.");
-                }
-                else
-                {
-                    options.previewBins = static_cast<std::size_t>(parsed);
-                }
-            }
-            else if(arg == skipVerifyFlag)
-            {
-                options.verifyDirect = false;
-            }
-            else if(arg == verifyFlag)
-            {
-                options.verifyDirect = true;
-            }
-            else if(arg.rfind(referencePrefix, 0) == 0)
-            {
-                std::string path(arg.substr(referencePrefix.size()));
-                if(path.empty())
-                {
-                    options.warnings.emplace_back("Ignoring empty --reference-fft argument.");
-                }
-                else
-                {
-                    options.referenceFftFile = std::move(path);
-                }
-            }
-            else if(arg.rfind(absTolPrefix, 0) == 0)
-            {
-                std::string value(arg.substr(absTolPrefix.size()));
-                char* end = nullptr;
-                float parsed = std::strtof(value.c_str(), &end);
-                if(end == value.c_str() || !std::isfinite(parsed) || parsed < 0.0f)
-                {
-                    options.warnings.emplace_back(
-                        "Ignoring invalid --verify-abs value '" + value + "'; keeping default.");
-                }
-                else
-                {
-                    options.verifyAbsTolerance = parsed;
-                }
-            }
-            else if(arg.rfind(relTolPrefix, 0) == 0)
-            {
-                std::string value(arg.substr(relTolPrefix.size()));
-                char* end = nullptr;
-                float parsed = std::strtof(value.c_str(), &end);
-                if(end == value.c_str() || !std::isfinite(parsed) || parsed < 0.0f)
-                {
-                    options.warnings.emplace_back(
-                        "Ignoring invalid --verify-rel value '" + value + "'; keeping default.");
-                }
-                else
-                {
-                    options.verifyRelTolerance = parsed;
-                }
-            }
-            else if(arg.rfind(precisionPrefix, 0) == 0)
-            {
-                std::string value(arg.substr(precisionPrefix.size()));
-                if(value == "float" || value == "Float" || value == "float32")
-                {
-                    options.verifyPrecision = DirectVerifyPrecision::Float32;
-                }
-                else if(value == "double" || value == "Double" || value == "float64")
-                {
-                    options.verifyPrecision = DirectVerifyPrecision::Float64;
-                }
-                else
-                {
-                    options.warnings.emplace_back(
-                        "Ignoring unknown --verify-direct-precision value '" + value
-                        + "'; expected 'float' or 'double'.");
-                }
-            }
-        }
-
-        if(options.signalLength == 0)
-            options.signalLength = 1;
-        if(options.previewBins == 0)
-            options.previewBins = 1;
-        return options;
-    }
-
-    float syntheticSample(std::size_t globalIndex, std::size_t totalLength)
-    {
-        constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
-        float position = (totalLength > 0) ? static_cast<float>(globalIndex) / static_cast<float>(totalLength) : 0.0f;
-        float base = std::sin(twoPi * 3.0f * position);
-        float overtone = 0.35f * std::sin(twoPi * 17.0f * position + 0.6f);
-        float envelope = 0.5f * std::cos(twoPi * 1.0f * position);
-        return base + overtone + envelope;
-    }
-
-    // Version 1 pipeline step 2: each rank prepares its strided samples from file or synthetic generator.
-    bool loadSignalChunk(
-        CommandLineOptions const& options,
-        std::size_t samplesPerRank,
-        std::size_t totalSamples,
-        int worldRank,
-        std::size_t worldSize,
-        std::vector<std::complex<float>>& chunk,
-        std::string& errorMessage)
-    {
-        chunk.assign(samplesPerRank, std::complex<float>{0.0f, 0.0f});
-        std::size_t const stride = worldSize;
-
-        if(options.signalFile)
-        {
-            std::ifstream input(options.signalFile->c_str(), std::ios::binary);
-            if(!input)
-            {
-                errorMessage = "Failed to open signal file '" + *options.signalFile + "'.";
-                return false;
-            }
-
-            for(std::size_t m = 0; m < samplesPerRank; ++m)
-            {
-                std::size_t const globalIndex = stride * m + static_cast<std::size_t>(worldRank);
-                if(globalIndex >= totalSamples)
-                    break;
-
-                std::streamoff const offset
-                    = static_cast<std::streamoff>(globalIndex) * static_cast<std::streamoff>(sizeof(float));
-                input.seekg(offset, std::ios::beg);
-                if(!input.good())
-                {
-                    errorMessage = "seekg failed at byte offset " + std::to_string(offset);
-                    return false;
-                }
-
-                float sample = 0.0f;
-                input.read(reinterpret_cast<char*>(&sample), sizeof(float));
-                if(!input)
-                {
-                    errorMessage = "Failed to read sample index " + std::to_string(globalIndex);
-                    return false;
-                }
-
-                chunk[m] = std::complex<float>{sample, 0.0f};
-            }
-        }
-        else
-        {
-            for(std::size_t m = 0; m < samplesPerRank; ++m)
-            {
-                std::size_t const globalIndex = stride * m + static_cast<std::size_t>(worldRank);
-                if(globalIndex >= totalSamples)
-                    break;
-                chunk[m] = std::complex<float>{syntheticSample(globalIndex, totalSamples), 0.0f};
-            }
-        }
-
-        return true;
-    }
-
-    // Version 1 pipeline step 8: rank 0 rebuilds the contiguous signal for reference DFTs.
-    bool loadFullSignalSequence(
-        CommandLineOptions const& options,
-        std::size_t totalSamples,
-        std::vector<std::complex<float>>& samples,
-        std::string& errorMessage)
-    {
-        samples.assign(totalSamples, std::complex<float>{0.0f, 0.0f});
-        if(totalSamples == 0)
-            return true;
-
-        // Version 1 pipeline step 8: rebuild the contiguous input so rank 0 can run the direct DFT.
-        if(options.signalFile)
-        {
-            std::ifstream input(options.signalFile->c_str(), std::ios::binary);
-            if(!input)
-            {
-                errorMessage = "Failed to open signal file '" + *options.signalFile + "' for verification.";
-                return false;
-            }
-
-            input.seekg(0, std::ios::end);
-            std::streamoff const fileBytes = input.tellg();
-            if(fileBytes < 0)
-            {
-                errorMessage = "tellg failed while sizing signal file.";
-                return false;
-            }
-            std::size_t const expectedBytes = totalSamples * sizeof(float);
-            if(static_cast<std::size_t>(fileBytes) < expectedBytes)
-            {
-                errorMessage = "Signal file shorter than required samples (expected at least "
-                               + std::to_string(expectedBytes) + " bytes).";
-                return false;
-            }
-            input.seekg(0, std::ios::beg);
-
-            for(std::size_t idx = 0; idx < totalSamples; ++idx)
-            {
-                float value = 0.0f;
-                input.read(reinterpret_cast<char*>(&value), sizeof(float));
-                if(!input)
-                {
-                    errorMessage = "Failed to read sample index " + std::to_string(idx) + " during verification.";
-                    return false;
-                }
-                samples[idx] = std::complex<float>{value, 0.0f};
-            }
-        }
-        else
-        {
-            for(std::size_t idx = 0; idx < totalSamples; ++idx)
-            {
-                samples[idx] = std::complex<float>{syntheticSample(idx, totalSamples), 0.0f};
-            }
-        }
-
-        return true;
-    }
-
-    // Version 1 pipeline step 8 (optional): load an external FFT for comparison.
-    bool loadReferenceSpectrumFromFile(
-        std::string const& path,
-        std::size_t totalSamples,
-        std::vector<std::complex<float>>& spectrum,
-        std::string& errorMessage)
-    {
-        spectrum.assign(totalSamples, std::complex<float>{0.0f, 0.0f});
-        if(totalSamples == 0)
-            return true;
-
-        std::ifstream input(path.c_str(), std::ios::binary);
-        if(!input)
-        {
-            errorMessage = "Failed to open reference FFT file '" + path + "'.";
-            return false;
-        }
-
-        input.seekg(0, std::ios::end);
-        std::streamoff const fileBytes = input.tellg();
-        if(fileBytes < 0)
-        {
-            errorMessage = "tellg failed while sizing reference FFT file.";
-            return false;
-        }
-        std::size_t const expectedBytes = totalSamples * sizeof(float) * 2U;
-        if(static_cast<std::size_t>(fileBytes) < expectedBytes)
-        {
-            errorMessage = "Reference FFT file shorter than required spectrum length (expected at least "
-                           + std::to_string(expectedBytes) + " bytes).";
-            return false;
-        }
-        input.seekg(0, std::ios::beg);
-
-        for(std::size_t idx = 0; idx < totalSamples; ++idx)
-        {
-            float real = 0.0f;
-            float imag = 0.0f;
-            input.read(reinterpret_cast<char*>(&real), sizeof(float));
-            input.read(reinterpret_cast<char*>(&imag), sizeof(float));
-            if(!input)
-            {
-                errorMessage = "Failed to read complex spectrum value at index " + std::to_string(idx) + '.';
-                return false;
-            }
-            spectrum[idx] = std::complex<float>{real, imag};
-        }
-
-        return true;
-    }
-
-    // Version 1 pipeline step 9: gather statistics when checking the distributed result.
-    struct VerificationStats
-    {
-        float maxAbsError = 0.0f;
-        float maxRelError = 0.0f;
-        std::size_t worstIndex = 0;
-        std::size_t failureCount = 0;
-    };
-
-    // Version 1 pipeline step 9: compare NCCL result against reference spectra using tolerances.
-    bool compareSpectra(
-        std::span<std::complex<float> const> computed,
-        std::span<std::complex<float> const> reference,
-        float absTolerance,
-        float relTolerance,
-        VerificationStats& stats)
-    {
-        stats = VerificationStats{};
-        if(computed.size() != reference.size())
-        {
-            stats.failureCount = std::max(computed.size(), reference.size());
-            stats.maxAbsError = std::numeric_limits<float>::infinity();
-            stats.maxRelError = std::numeric_limits<float>::infinity();
-            stats.worstIndex = 0;
-            return false;
-        }
-
-        for(std::size_t idx = 0; idx < computed.size(); ++idx)
-        {
-            std::complex<float> const diff = computed[idx] - reference[idx];
-            float const absDiff = std::abs(diff);
-            float const referenceMag = std::abs(reference[idx]);
-            float const relDiff = (referenceMag > 0.0f) ? absDiff / referenceMag : absDiff;
-
-            if(absDiff > stats.maxAbsError)
-            {
-                stats.maxAbsError = absDiff;
-                stats.worstIndex = idx;
-            }
-            if(relDiff > stats.maxRelError)
-            {
-                stats.maxRelError = relDiff;
-            }
-            if(absDiff > absTolerance && relDiff > relTolerance)
-            {
-                ++stats.failureCount;
-            }
-        }
-
-        return stats.failureCount == 0;
-    }
-
-    // Version 1 pipeline step 3: naive O(n^2) DFT used for both float and double precision.
-    template<typename Float>
-    std::vector<std::complex<Float>> computeLocalFftGeneric(std::span<std::complex<Float> const> samples)
-    {
-        std::size_t const sampleCount = samples.size();
-        std::vector<std::complex<Float>> spectrum(sampleCount, std::complex<Float>{0.0f, 0.0f});
-        if(sampleCount == 0)
-            return spectrum;
-
-        constexpr Float twoPi = static_cast<Float>(2.0) * std::numbers::pi_v<Float>;
-        for(std::size_t k = 0; k < sampleCount; ++k)
-        {
-            std::complex<Float> sum{0.0f, 0.0f};
-            for(std::size_t n = 0; n < sampleCount; ++n)
-            {
-                Float angle = -twoPi * static_cast<Float>(n * k) / static_cast<Float>(sampleCount);
-                sum += samples[n] * std::complex<Float>{std::cos(angle), std::sin(angle)};
-            }
-            spectrum[k] = sum;
-        }
-
-        return spectrum;
-    }
-
-    // Naive O(n^2) DFT of the rank's strided sample sequence; good enough for demonstration sizes.
-    std::vector<std::complex<float>> computeLocalFft(std::span<std::complex<float> const> samples)
-    {
-        return computeLocalFftGeneric<float>(samples);
-    }
-
-    std::vector<std::complex<float>> computeLocalFftWithPrecision(
-        std::span<std::complex<float> const> samples,
-        DirectVerifyPrecision precision)
-    {
-        if(precision == DirectVerifyPrecision::Float32)
-        {
-            return computeLocalFft(samples);
-        }
-
-        std::vector<std::complex<double>> doubleSamples(samples.size(), std::complex<double>{0.0, 0.0});
-        for(std::size_t idx = 0; idx < samples.size(); ++idx)
-        {
-            doubleSamples[idx] = std::complex<double>{
-                static_cast<double>(samples[idx].real()),
-                static_cast<double>(samples[idx].imag())};
-        }
-
-        auto doubleSpectrum = computeLocalFftGeneric<double>(
-            std::span<std::complex<double> const>{doubleSamples.data(), doubleSamples.size()});
-
-        std::vector<std::complex<float>> spectrum(doubleSpectrum.size(), std::complex<float>{0.0f, 0.0f});
-        for(std::size_t idx = 0; idx < doubleSpectrum.size(); ++idx)
-        {
-            spectrum[idx] = std::complex<float>{
-                static_cast<float>(doubleSpectrum[idx].real()),
-                static_cast<float>(doubleSpectrum[idx].imag())};
-        }
-
-        return spectrum;
+        return std::nullopt;
     }
 
     // Version 1 pipeline step 4: compose the global spectrum contribution for this rank using phase correction.
@@ -810,28 +178,10 @@ namespace
             deviceCount = 1;
         }
 
-        auto discoverLocalRank = [&]() -> std::optional<int>
-        {
-            if(bootstrap.localRank >= 0)
-                return bootstrap.localRank;
-
-            constexpr std::array<char const*, 4> envKeys{
-                "OMPI_COMM_WORLD_LOCAL_RANK",
-                "MPI_LOCALRANKID",
-                "SLURM_LOCALID",
-                "LOCAL_RANK"};
-            for(auto const* key : envKeys)
-            {
-                if(auto const envRank = parseEnvInt(key))
-                    return envRank;
-            }
-            return std::nullopt;
-        };
-
         int deviceId = 0;
         if(deviceCount > 0)
         {
-            auto const preferredRank = discoverLocalRank().value_or(bootstrap.worldRank);
+            auto const preferredRank = discoverLocalRank(bootstrap).value_or(bootstrap.worldRank);
             deviceId = preferredRank % deviceCount;
         }
 
@@ -1156,8 +506,8 @@ namespace
 
 int main(int argc, char** argv)
 {
-    auto bootstrap = prepareBootstrap(argc, argv);
-    auto options = parseCommandLine(argc, argv);
+    auto bootstrap = collectiveFft::prepareBootstrap(argc, argv);
+    auto options = collectiveFft::parseCommandLine(argc, argv);
     if((!bootstrap.enabled || bootstrap.worldRank == 0) && !options.warnings.empty())
     {
         for(auto const& warning : options.warnings)
@@ -1169,6 +519,6 @@ int main(int argc, char** argv)
     auto const result = alpaka::onHost::executeForEachIfHasDevice(
         [&bootstrap, &options](auto const& tag) { return runCollectiveFft(tag, bootstrap, options); },
         alpaka::onHost::allBackends(alpaka::onHost::enabledApis, alpaka::onHost::example::enabledExecutors));
-    finalizeBootstrap(bootstrap);
+    collectiveFft::finalizeBootstrap(bootstrap);
     return result;
 }

@@ -14,7 +14,15 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/CudaSupport.cmake)
 # Example configure: cmake -S .. -B build -DCMAKE_BUILD_TYPE=Release \
 #     -DMPI_C_COMPILER=mpicc -DMPI_CXX_COMPILER=mpicxx
 
-add_executable(tensorCollectiveFFT src/tensorCollectiveFFT.cpp)
+add_executable(
+    tensorCollectiveFFT
+    src/tensorCollectiveFFT.cpp
+    src/bootstrap.cpp
+    src/dataSource.cpp
+    src/options.cpp
+    src/verification.cpp
+)
+target_include_directories(tensorCollectiveFFT PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(tensorCollectiveFFT PUBLIC alpaka::alpaka)
 alpaka_finalize(tensorCollectiveFFT)
 
