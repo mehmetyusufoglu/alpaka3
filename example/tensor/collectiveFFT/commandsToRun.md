@@ -6,23 +6,21 @@
    export NCCL_ROOT=$NVHPC/Linux_x86_64/24.3/comm_libs/nccl
    export LD_LIBRARY_PATH=$NCCL_ROOT/lib:$LD_LIBRARY_PATH
    ```
-2. **Build the demo**
-   ```bash
-   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -Dalpaka_ENABLE_COLLECTIVES=ON -Dalpaka_ENABLE_NCCL=ON
-   cmake --build build --target tensorCollectiveFFT -j8
-   ```
-3. **Request a multi-GPU allocation**
+2. **Request a multi-GPU allocation**
    ```bash
    salloc -N2 -n4 --partition=casus_a100 --gres=gpu:2 --time=00:30:00
    srun --jobid=$SLURM_JOB_ID --pty bash -l
    ```
-4. **Prepare hostfile on compute node**
+3. **Build the demo on the compute node**
    ```bash
    module load cuda/12.4
+   cd ~/alpaka3
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -Dalpaka_ENABLE_COLLECTIVES=ON -Dalpaka_ENABLE_NCCL=ON
+   cmake --build build --target tensorCollectiveFFT -j8
    scontrol show hostnames "$SLURM_JOB_NODELIST" | awk '{print $0 " slots=2"}' > hostfile
    exit
    ```
-5. **Launch the demo from the build tree (login node)**
+4. **Launch the demo from the build tree (login node)**
    ```bash
    cd ~/alpaka3/build
    mpirun -n 4 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscribe \

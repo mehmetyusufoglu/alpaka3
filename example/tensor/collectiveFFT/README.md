@@ -125,6 +125,18 @@ external FFT provides the baseline.
 - Verification failures: inspect the reported bin index, ensure the reference file
   matches the chosen signal length, and verify the tolerances are appropriate for
   the numeric precision in use.
+
+### Build Architecture Mismatch
+
+If you compile on a login node whose CPU architecture differs from the compute
+nodes, the resulting binary can fail immediately with `Exec format error` when
+`mpirun` starts the ranks. Rebuild while you are inside the Slurm allocation
+(`srun --pty …`) using the same module stack that will be active during execution.
+You can confirm the artifact targets x86-64 by running `file
+build/example/tensor/collectiveFFT/tensorCollectiveFFT`; on Hemera it should
+report `ELF 64-bit LSB executable, x86-64`. If you must build on the login node,
+ensure the toolchain emits binaries for the compute-node architecture explicitly.
+
 Local size: 2
 Collective provider for NCCL is only available on CUDA executors; skipping.
 
