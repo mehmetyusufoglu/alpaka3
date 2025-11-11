@@ -229,19 +229,21 @@ namespace
         return bootstrap;
     }
 #else
-    MultiProcessBootstrap prepareBootstrap(int&, char**&)
+    if(globalSamples > (1U << 15))
     {
-        MultiProcessBootstrap bootstrap{};
-        static constexpr std::array<char const*, 2> worldSizeKeys{"OMPI_COMM_WORLD_SIZE", "WORLD_SIZE"};
+        std::cout << "Running naive O(n^2) verification for " << globalSamples << " samples ("
+                  << (options.verifyPrecision == DirectVerifyPrecision::Float64 ? "double" : "float")
+                  << " precision); this may take a while.\n";
         static constexpr std::array<char const*, 2> worldRankKeys{"OMPI_COMM_WORLD_RANK", "RANK"};
         static constexpr std::array<char const*, 4> localRankKeys{
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "SLURM_LOCALID",
             "LOCAL_RANK"};
-
-        if(auto worldSize = parseFirstEnvInt(worldSizeKeys))
-            bootstrap.worldSize = *worldSize;
+        auto const directSpectrum = computeLocalFftWithPrecision(
+            std::span<std::complex<float> const>{fullSignal.data(), fullSignal.size()},
+            options.verifyPrecision);
+        bootstrap.worldSize = *worldSize;
         if(auto worldRank = parseFirstEnvInt(worldRankKeys))
             bootstrap.worldRank = *worldRank;
         if(auto localRank = parseFirstEnvInt(localRankKeys))
@@ -270,6 +272,12 @@ namespace
 #endif
     }
 
+    enum class DirectVerifyPrecision
+    {
+        Float32,
+        Float64
+    };
+
     struct CommandLineOptions
     {
         std::size_t signalLength = 16384;
@@ -279,6 +287,7 @@ namespace
         std::optional<std::string> referenceFftFile{};
         float verifyAbsTolerance = 1.0e-4f;
         float verifyRelTolerance = 1.0e-3f;
+        DirectVerifyPrecision verifyPrecision = DirectVerifyPrecision::Float64;
         std::vector<std::string> warnings{};
     };
 
@@ -293,6 +302,7 @@ namespace
         constexpr std::string_view relTolPrefix{"--verify-rel="};
         constexpr std::string_view verifyFlag{"--verify-direct"};
         constexpr std::string_view skipVerifyFlag{"--skip-verify"};
+        constexpr std::string_view precisionPrefix{"--verify-direct-precision="};
 
         for(int i = 1; i < argc; ++i)
         {
@@ -387,6 +397,24 @@ namespace
                 else
                 {
                     options.verifyRelTolerance = parsed;
+                }
+            }
+            else if(arg.rfind(precisionPrefix, 0) == 0)
+            {
+                std::string value(arg.substr(precisionPrefix.size()));
+                if(value == "float" || value == "Float" || value == "float32")
+                {
+                    options.verifyPrecision = DirectVerifyPrecision::Float32;
+                }
+                else if(value == "double" || value == "Double" || value == "float64")
+                {
+                    options.verifyPrecision = DirectVerifyPrecision::Float64;
+                }
+                else
+                {
+                    options.warnings.emplace_back(
+                        "Ignoring unknown --verify-direct-precision value '" + value
+                        + "'; expected 'float' or 'double'.");
                 }
             }
         }
@@ -627,24 +655,61 @@ namespace
         return stats.failureCount == 0;
     }
 
-    // Naive O(n^2) DFT of the rank's strided sample sequence; good enough for demonstration sizes.
-    std::vector<std::complex<float>> computeLocalFft(std::span<std::complex<float> const> samples)
+    template<typename Float>
+    std::vector<std::complex<Float>> computeLocalFftGeneric(std::span<std::complex<Float> const> samples)
     {
         std::size_t const sampleCount = samples.size();
-        std::vector<std::complex<float>> spectrum(sampleCount, std::complex<float>{0.0f, 0.0f});
+        std::vector<std::complex<Float>> spectrum(sampleCount, std::complex<Float>{0.0f, 0.0f});
         if(sampleCount == 0)
             return spectrum;
 
-        constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
+        constexpr Float twoPi = static_cast<Float>(2.0) * std::numbers::pi_v<Float>;
         for(std::size_t k = 0; k < sampleCount; ++k)
         {
-            std::complex<float> sum{0.0f, 0.0f};
+            std::complex<Float> sum{0.0f, 0.0f};
             for(std::size_t n = 0; n < sampleCount; ++n)
             {
-                float angle = -twoPi * static_cast<float>(n * k) / static_cast<float>(sampleCount);
-                sum += samples[n] * std::complex<float>{std::cos(angle), std::sin(angle)};
+                Float angle = -twoPi * static_cast<Float>(n * k) / static_cast<Float>(sampleCount);
+                sum += samples[n] * std::complex<Float>{std::cos(angle), std::sin(angle)};
             }
             spectrum[k] = sum;
+        }
+
+        return spectrum;
+    }
+
+    // Naive O(n^2) DFT of the rank's strided sample sequence; good enough for demonstration sizes.
+    std::vector<std::complex<float>> computeLocalFft(std::span<std::complex<float> const> samples)
+    {
+        return computeLocalFftGeneric<float>(samples);
+    }
+
+    std::vector<std::complex<float>> computeLocalFftWithPrecision(
+        std::span<std::complex<float> const> samples,
+        DirectVerifyPrecision precision)
+    {
+        if(precision == DirectVerifyPrecision::Float32)
+        {
+            return computeLocalFft(samples);
+        }
+
+        std::vector<std::complex<double>> doubleSamples(samples.size(), std::complex<double>{0.0, 0.0});
+        for(std::size_t idx = 0; idx < samples.size(); ++idx)
+        {
+            doubleSamples[idx] = std::complex<double>{
+                static_cast<double>(samples[idx].real()),
+                static_cast<double>(samples[idx].imag())};
+        }
+
+        auto doubleSpectrum = computeLocalFftGeneric<double>(
+            std::span<std::complex<double> const>{doubleSamples.data(), doubleSamples.size()});
+
+        std::vector<std::complex<float>> spectrum(doubleSpectrum.size(), std::complex<float>{0.0f, 0.0f});
+        for(std::size_t idx = 0; idx < doubleSpectrum.size(); ++idx)
+        {
+            spectrum[idx] = std::complex<float>{
+                static_cast<float>(doubleSpectrum[idx].real()),
+                static_cast<float>(doubleSpectrum[idx].imag())};
         }
 
         return spectrum;
