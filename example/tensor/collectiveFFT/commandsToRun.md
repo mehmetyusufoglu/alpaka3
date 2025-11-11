@@ -29,6 +29,17 @@
           -x NCCL_ROOT -x LD_LIBRARY_PATH \
           ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=65536
    ```
+
+   If there are tolerance related error-limit errors. 
+   ```bash
+   cd ~/alpaka3/build
+   mpirun -n 4 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscribe \
+       -x NCCL_ROOT -x LD_LIBRARY_PATH \
+       ./example/tensor/collectiveFFT/tensorCollectiveFFT \
+       --signal-length=65536 \
+       --verify-abs=1e-1 --verify-rel=5e-3 \
+       --verify-direct-precision=float
+    ```
 6. **Confirm output**
    - Each rank reports its strided sample range.
    - Rank 0 prints a spectrum preview and verification result.
