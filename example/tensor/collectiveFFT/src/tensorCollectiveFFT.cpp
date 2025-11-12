@@ -238,6 +238,13 @@ namespace
             std::vector<std::complex<float>> localSpectrum;
             bool providerFftUsed = false;
 
+            tt::Tensor1D<std::complex<float>, Device> deviceInput(device, {samplesPerRank}, "fft-local-input");
+            tt::Tensor1D<std::complex<float>, Device> deviceOutput(device, {samplesPerRank}, "fft-local-output");
+
+            auto* hostInput = deviceInput.hostData();
+            std::copy(localSamples.begin(), localSamples.end(), hostInput);
+            deviceInput.markHostModified();
+
             if(providerFftEnabled(options) && providerFftAvailable)
             {
                 try
@@ -250,23 +257,7 @@ namespace
                     fftParams.direction = alpaka::tensor::ops::FftDirection::Forward;
                     fftParams.inPlace = false;
 
-                    tt::Tensor1D<std::complex<float>, Device> deviceInput(device, {samplesPerRank}, "fft-local-input");
-                    tt::Tensor1D<std::complex<float>, Device> deviceOutput(
-                        device,
-                        {samplesPerRank},
-                        "fft-local-output");
-
-                    auto* hostInput = deviceInput.hostData();
-                    std::copy(localSamples.begin(), localSamples.end(), hostInput);
-                    deviceInput.markHostModified();
-
                     context.fft(deviceInput, deviceOutput, fftParams);
-
-                    deviceOutput.toHost(device, queue);
-                    alpaka::onHost::wait(queue);
-
-                    auto* hostOutput = deviceOutput.hostData();
-                    localSpectrum.assign(hostOutput, hostOutput + samplesPerRank);
                     providerFftUsed = true;
                 }
                 catch(std::exception const& ex)
@@ -282,8 +273,16 @@ namespace
                         std::cout << "cuFFT provider unavailable for local spectra (" << ex.what()
                                   << ") – falling back to host-side DFT." << '\n';
                     }
-                    localSpectrum.clear();
+                    providerFftUsed = false;
                 }
+            }
+
+            if(providerFftUsed)
+            {
+                deviceOutput.toHost(device, queue);
+                alpaka::onHost::wait(queue);
+                auto* hostOutput = deviceOutput.hostData();
+                localSpectrum.assign(hostOutput, hostOutput + samplesPerRank);
             }
 
             if(localSpectrum.empty())
