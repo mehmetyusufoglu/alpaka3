@@ -21,7 +21,6 @@
 #include "collectiveFft/verification.hpp"
 
 #include <alpaka/alpaka.hpp>
-#include <alpaka/onHost/copy.hpp>
 #include <alpaka/onHost/example/executors.hpp>
 #include <alpaka/onHost/executeForEach.hpp>
 #include <alpaka/onHost/interface.hpp>
@@ -382,7 +381,7 @@ namespace
             spectralTensor.markHostModified();
 
             spectralTensor.ensureOnDevice(device, queue);
-            alpaka::onHost::copy(queue, device, spectralTensor);
+            alpaka::onHost::wait(queue);
             auto& deviceBuffer = spectralTensor.deviceBuffer(device, queue);
             auto* devicePtr = alpaka::onHost::data(deviceBuffer);
 
