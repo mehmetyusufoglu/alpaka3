@@ -43,3 +43,17 @@
    - Rank 0 prints a spectrum preview and verification result.
    - "Distributed FFT complete" message indicates success.
 make 
+
+
+Q/A:
+
+
+Q: so we never use srun in compute node interactive shell ?
+
+Requesting clarification
+Exactly. Once you’re inside the interactive shell that srun --pty ... bash opened on the compute node, you already own the GPU allocation. Run the binary directly there. Only use another srun after you exit that shell and need to start a fresh job step.
+
+Q what about if we use mpirun , we are running it from not compute node but we give some arguments to it so that it runs in an allocated compute node?
+ 
+Clarifying mpirun vs srun differences
+Right. Once you exit the interactive shell, you run mpirun from the login node—but you point it at the compute nodes you already reserved by handing it the hostfile Slurm generated (scontrol show hostnames). Because the allocation is still active, mpirun launches the ranks on those nodes even though the command itself runs on the login host. Just make sure the hostfile, environment vars, and build artifacts live in the shared filesystem (they do), and the MPI job will honor the allocation.
