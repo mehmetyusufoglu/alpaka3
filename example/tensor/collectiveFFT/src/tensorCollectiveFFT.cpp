@@ -35,6 +35,7 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -187,20 +188,54 @@ namespace
                 return 0;
             }
 
-            if(providerFftRequired(options))
+            bool const providerAvailable
+                = tt::EnabledVendorLibs::hasCUFFT && context.supportsOperation(tt::OpType::FFT);
+            bool const sizeWithinProvider
+                = samplesPerRank <= static_cast<std::size_t>(std::numeric_limits<int>::max());
+            bool const providerUsable = providerAvailable && sizeWithinProvider;
+
+            if(providerFftRequired(options) && !providerUsable)
             {
                 if(groupConfig.worldRank == 0)
                 {
-                    std::cerr << "cuFFT provider (--force-provider-fft) is temporarily disabled in "
-                              << "tensorCollectiveFFT." << std::endl;
+                    if(!providerAvailable)
+                    {
+                        std::cerr << "cuFFT provider required (--force-provider-fft) but not available in this "
+                                     "configuration."
+                                  << '\n';
+                    }
+                    else
+                    {
+                        std::cerr << "cuFFT provider required (--force-provider-fft) but local transform length "
+                                  << samplesPerRank << " exceeds cuFFT limits." << '\n';
+                    }
                 }
                 return 1;
             }
 
-            if(providerFftEnabled(options) && groupConfig.worldRank == 0)
+            if(providerFftEnabled(options) && !providerUsable && groupConfig.worldRank == 0)
             {
-                std::cout << "cuFFT provider currently disabled for tensorCollectiveFFT; using host-side DFT instead."
-                          << '\n';
+                if(!providerAvailable)
+                {
+                    std::cout << "cuFFT provider unavailable; defaulting to host-side DFT for local spectra." << '\n';
+                }
+                else
+                {
+                    std::cout << "Local FFT length " << samplesPerRank
+                              << " exceeds cuFFT limits; defaulting to host-side DFT." << '\n';
+                }
+            }
+
+            if(!providerFftEnabled(options) && providerAvailable && groupConfig.worldRank == 0)
+            {
+                std::cout << "cuFFT provider disabled via --disable-provider-fft; using host-side DFT." << '\n';
+            }
+
+            bool const useProviderFft = providerFftEnabled(options) && providerUsable;
+
+            if(useProviderFft && groupConfig.worldRank == 0)
+            {
+                std::cout << "cuFFT provider active for local spectra on each rank." << '\n';
             }
 
             std::vector<std::complex<float>> localSamples;
@@ -248,23 +283,36 @@ namespace
                           << ", mean |x|=" << magnitudeMean << '\n';
             }
 
-            if(providerFftRequired(options))
-            {
-                if(groupConfig.worldRank == 0)
-                {
-                    std::cerr << "cuFFT provider (--force-provider-fft) is temporarily disabled in "
-                              << "tensorCollectiveFFT." << std::endl;
-                }
-                return 1;
-            }
+            std::vector<std::complex<float>> localSpectrum;
 
-            if(providerFftEnabled(options) && groupConfig.worldRank == 0)
+            if(useProviderFft)
             {
-                std::cout << "cuFFT provider currently disabled for tensorCollectiveFFT; using host-side DFT instead."
-                          << '\n';
-            }
+                tt::Tensor1D<std::complex<float>, Device> deviceInput(device, {samplesPerRank}, "fft-local-input");
+                tt::Tensor1D<std::complex<float>, Device> deviceOutput(device, {samplesPerRank}, "fft-local-output");
 
-            auto localSpectrum = computeLocalFft(localSamples);
+                auto* hostInputPtr = deviceInput.hostData();
+                std::copy(localSamples.begin(), localSamples.end(), hostInputPtr);
+                deviceInput.markHostModified();
+
+                tt::ops::FftParams fftParams{};
+                fftParams.rank = 1;
+                fftParams.lengths[0] = samplesPerRank;
+                fftParams.batch = 1;
+                fftParams.transformType = tt::ops::FftTransformType::ComplexToComplex;
+                fftParams.direction = tt::ops::FftDirection::Forward;
+                fftParams.inPlace = false;
+
+                context.fft(deviceInput, deviceOutput, fftParams);
+                deviceOutput.toHost(device, queue);
+                alpaka::onHost::wait(queue);
+
+                auto const* hostOutputPtr = deviceOutput.hostData();
+                localSpectrum.assign(hostOutputPtr, hostOutputPtr + samplesPerRank);
+            }
+            else
+            {
+                localSpectrum = computeLocalFft(localSamples);
+            }
 
             if(!localSpectrum.empty())
             {
