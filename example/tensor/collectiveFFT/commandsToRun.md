@@ -42,3 +42,4 @@
    - Each rank reports its strided sample range.
    - Rank 0 prints a spectrum preview and verification result.
    - "Distributed FFT complete" message indicates success.
+make 
