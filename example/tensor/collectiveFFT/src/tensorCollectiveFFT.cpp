@@ -307,6 +307,7 @@ namespace
                 fftParams.inPlace = false;
 
                 context.fft(deviceInput, deviceOutput, fftParams);
+                deviceOutput.markDeviceModified(device, queue);
                 alpaka::onHost::wait(queue);
                 deviceOutput.toHost(device, queue);
                 alpaka::onHost::wait(queue);
