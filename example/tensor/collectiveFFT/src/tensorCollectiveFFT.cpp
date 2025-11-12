@@ -294,6 +294,10 @@ namespace
                 std::copy(localSamples.begin(), localSamples.end(), hostInputPtr);
                 deviceInput.markHostModified();
 
+                deviceInput.ensureOnDevice(device, queue);
+                deviceOutput.ensureOnDevice(device, queue);
+                alpaka::onHost::wait(queue);
+
                 tt::ops::FftParams fftParams{};
                 fftParams.rank = 1;
                 fftParams.lengths[0] = samplesPerRank;
@@ -303,6 +307,7 @@ namespace
                 fftParams.inPlace = false;
 
                 context.fft(deviceInput, deviceOutput, fftParams);
+                alpaka::onHost::wait(queue);
                 deviceOutput.toHost(device, queue);
                 alpaka::onHost::wait(queue);
 
