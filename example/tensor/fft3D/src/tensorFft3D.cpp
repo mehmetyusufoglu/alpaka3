@@ -318,8 +318,8 @@ namespace
 
                 long long const realDistance = static_cast<long long>(options.nx) * static_cast<long long>(options.ny)
                                                * static_cast<long long>(options.nz);
-                long long const complexDistance = static_cast<long long>(options.ny)
-                                                  * static_cast<long long>(options.nz)
+                long long const complexDistance = static_cast<long long>(options.nx)
+                                                  * static_cast<long long>(options.ny)
                                                   * static_cast<long long>(spectralNz);
 
                 if(realDistance <= 0 || complexDistance <= 0)
@@ -342,9 +342,9 @@ namespace
                     cufftHandle plan = 0;
                     int const rank = 3;
                     std::array<int, 3> dims{
-                        static_cast<int>(options.nz),
+                        static_cast<int>(options.nx),
                         static_cast<int>(options.ny),
-                        static_cast<int>(options.nx)};
+                        static_cast<int>(options.nz)};
                     for(int dim : dims)
                     {
                         if(dim <= 0)
