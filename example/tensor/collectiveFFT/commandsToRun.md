@@ -30,8 +30,10 @@
    cd ~/alpaka3/build
    mpirun -n 4 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscribe \
           -x NCCL_ROOT -x LD_LIBRARY_PATH \
-          ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=65536
+          ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=65536 \
+          --disable-provider-fft
    ```
+   _Note: `--disable-provider-fft` uses host-side DFT until cuFFT provider path is repaired._
 
    If there are tolerance related error-limit errors. 
    ```bash
