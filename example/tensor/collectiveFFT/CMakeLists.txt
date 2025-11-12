@@ -20,6 +20,7 @@ add_executable(
     src/bootstrap.cpp
     src/dataSource.cpp
     src/options.cpp
+    src/utilities.cpp
     src/verification.cpp
 )
 target_include_directories(tensorCollectiveFFT PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
