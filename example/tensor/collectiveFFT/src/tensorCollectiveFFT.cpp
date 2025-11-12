@@ -289,6 +289,8 @@ namespace
                     fftParams.inPlace = false;
 
                     context.fft(deviceInput, deviceOutput, fftParams);
+                    alpaka::onHost::wait(queue);
+                    deviceOutput.markDeviceModified(device, queue);
                     providerFftUsed = true;
                 }
                 catch(std::exception const& ex)
