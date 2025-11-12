@@ -235,6 +235,21 @@ namespace
                 std::cout << "Generating synthetic multi-tone signal; provide --signal-file for real data.\n";
             }
 
+            if(!localSamples.empty())
+            {
+                double sampleMagnitudeSum = 0.0;
+                float sampleMagnitudeMax = 0.0f;
+                for(auto const& value : localSamples)
+                {
+                    float const magnitude = std::abs(value);
+                    sampleMagnitudeSum += static_cast<double>(magnitude);
+                    sampleMagnitudeMax = std::max(sampleMagnitudeMax, magnitude);
+                }
+                double const magnitudeMean = sampleMagnitudeSum / static_cast<double>(localSamples.size());
+                std::cout << "Rank " << groupConfig.worldRank << " local samples stats: max |x|=" << sampleMagnitudeMax
+                          << ", mean |x|=" << magnitudeMean << '\n';
+            }
+
             std::vector<std::complex<float>> localSpectrum;
             bool providerFftUsed = false;
 
@@ -244,6 +259,17 @@ namespace
             auto* hostInput = deviceInput.hostData();
             std::copy(localSamples.begin(), localSamples.end(), hostInput);
             deviceInput.markHostModified();
+
+            if(groupConfig.worldRank == 0)
+            {
+                std::cout << "Rank 0 device input preview:";
+                std::size_t const previewBins = std::min<std::size_t>(8, samplesPerRank);
+                for(std::size_t idx = 0; idx < previewBins; ++idx)
+                {
+                    std::cout << " " << idx << ":" << hostInput[idx];
+                }
+                std::cout << '\n';
+            }
 
             if(providerFftEnabled(options) && providerFftAvailable)
             {
