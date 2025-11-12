@@ -262,6 +262,9 @@ namespace
             deviceInput.ensureOnDevice(device, queue);
             alpaka::onHost::wait(queue);
 
+            deviceOutput.ensureOnDevice(device, queue);
+            alpaka::onHost::wait(queue);
+
             if(groupConfig.worldRank == 0)
             {
                 std::cout << "Rank 0 device input preview:";
