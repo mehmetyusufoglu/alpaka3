@@ -259,6 +259,8 @@ namespace
             auto* hostInput = deviceInput.hostData();
             std::copy(localSamples.begin(), localSamples.end(), hostInput);
             deviceInput.markHostModified();
+            deviceInput.ensureOnDevice(device, queue);
+            alpaka::onHost::wait(queue);
 
             if(groupConfig.worldRank == 0)
             {
