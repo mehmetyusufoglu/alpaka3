@@ -295,12 +295,53 @@ namespace
                 std::cout << "cuFFT being used for per-rank FFT computation." << '\n';
             }
 
+            if(!localSpectrum.empty())
+            {
+                double magnitudeSum = 0.0;
+                float magnitudeMax = 0.0f;
+                for(auto const& value : localSpectrum)
+                {
+                    float const magnitude = std::abs(value);
+                    magnitudeSum += static_cast<double>(magnitude);
+                    magnitudeMax = std::max(magnitudeMax, magnitude);
+                }
+                double const magnitudeMean = magnitudeSum / static_cast<double>(localSpectrum.size());
+                std::cout << "Rank " << groupConfig.worldRank << " local spectrum stats: max |X|=" << magnitudeMax
+                          << ", mean |X|=" << magnitudeMean << '\n';
+
+                if(groupConfig.worldRank == 0)
+                {
+                    std::cout << "Rank 0 local spectrum preview:";
+                    std::size_t const previewBins = std::min<std::size_t>(8, localSpectrum.size());
+                    for(std::size_t idx = 0; idx < previewBins; ++idx)
+                    {
+                        std::cout << " " << idx << ":" << localSpectrum[idx];
+                    }
+                    std::cout << '\n';
+                }
+            }
+
             // Version 2 pipeline step 4: apply stride-dependent phases and lay out global contributions.
             auto contributions = detail::buildRankContribution(
                 std::span{localSpectrum},
                 groupConfig.worldRank,
                 participantCount,
                 globalSamples);
+
+            if(!contributions.empty())
+            {
+                double magnitudeSum = 0.0;
+                float magnitudeMax = 0.0f;
+                for(auto const& value : contributions)
+                {
+                    float const magnitude = std::abs(value);
+                    magnitudeSum += static_cast<double>(magnitude);
+                    magnitudeMax = std::max(magnitudeMax, magnitude);
+                }
+                double const magnitudeMean = magnitudeSum / static_cast<double>(contributions.size());
+                std::cout << "Rank " << groupConfig.worldRank << " contribution stats: max |X|=" << magnitudeMax
+                          << ", mean |X|=" << magnitudeMean << '\n';
+            }
 
             // Version 1 pipeline step 5: stage contributions in an alpaka tensor and move to the CUDA device.
             std::vector<float> interleaved(contributions.size() * 2U, 0.0f);
@@ -316,6 +357,7 @@ namespace
             spectralTensor.markHostModified();
 
             spectralTensor.ensureOnDevice(device, queue);
+            alpaka::onHost::wait(queue);
             auto& deviceBuffer = spectralTensor.deviceBuffer(device, queue);
             auto* devicePtr = alpaka::onHost::data(deviceBuffer);
 
