@@ -295,6 +295,8 @@ namespace
                 deviceInput.markHostModified();
 
                 deviceInput.ensureOnDevice(device, queue);
+                alpaka::onHost::wait(queue);
+
                 deviceOutput.ensureOnDevice(device, queue);
                 alpaka::onHost::wait(queue);
 
@@ -306,14 +308,30 @@ namespace
                 fftParams.direction = tt::ops::FftDirection::Forward;
                 fftParams.inPlace = false;
 
-                context.fft(deviceInput, deviceOutput, fftParams);
-                deviceOutput.markDeviceModified(device, queue);
-                alpaka::onHost::wait(queue);
-                deviceOutput.toHost(device, queue);
-                alpaka::onHost::wait(queue);
+                try
+                {
+                    context.fft(deviceInput, deviceOutput, fftParams);
+                    deviceOutput.markDeviceModified(device, queue);
+                    alpaka::onHost::wait(queue);
 
-                auto const* hostOutputPtr = deviceOutput.hostData();
-                localSpectrum.assign(hostOutputPtr, hostOutputPtr + samplesPerRank);
+                    deviceOutput.toHost(device, queue);
+                    alpaka::onHost::wait(queue);
+
+                    auto const* hostOutputPtr = deviceOutput.hostData();
+                    localSpectrum.assign(hostOutputPtr, hostOutputPtr + samplesPerRank);
+
+                    if(groupConfig.worldRank == 0)
+                    {
+                        std::cout << "Rank " << groupConfig.worldRank
+                                  << " cuFFT succeeded, first output value: " << localSpectrum[0] << '\n';
+                    }
+                }
+                catch(std::exception const& e)
+                {
+                    std::cerr << "Rank " << groupConfig.worldRank << " cuFFT failed: " << e.what()
+                              << "; falling back to host DFT.\n";
+                    localSpectrum = computeLocalFft(localSamples);
+                }
             }
             else
             {
