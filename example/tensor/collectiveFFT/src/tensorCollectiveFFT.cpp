@@ -191,6 +191,8 @@ namespace
             }
 
             constexpr std::size_t maxDirectVerifySamples = 1U << 16; // 65536 bins keep O(N^2) reasonable
+            constexpr std::size_t maxCufft1dLength = 1U << 26; // 67108864 bins is the cuFFT single-FFT limit on A100
+            constexpr std::size_t maxDirectFallbackSamples = 1U << 18; // 262144 bins keeps CPU fallback bounded
             bool const directVerifyActive = options.verifyDirect && globalSamples <= maxDirectVerifySamples;
             if(options.verifyDirect && !directVerifyActive && groupConfig.worldRank == 0)
             {
@@ -203,7 +205,8 @@ namespace
                 = tt::EnabledVendorLibs::hasCUFFT && context.supportsOperation(tt::OpType::FFT);
             bool const sizeWithinProvider
                 = samplesPerRank <= static_cast<std::size_t>(std::numeric_limits<int>::max());
-            bool const providerUsable = providerAvailable && sizeWithinProvider;
+            bool const lengthWithinCufftLimit = samplesPerRank <= maxCufft1dLength;
+            bool const providerUsable = providerAvailable && sizeWithinProvider && lengthWithinCufftLimit;
 
             if(providerFftRequired(options) && !providerUsable)
             {
@@ -218,7 +221,8 @@ namespace
                     else
                     {
                         std::cerr << "cuFFT provider required (--force-provider-fft) but local transform length "
-                                  << samplesPerRank << " exceeds cuFFT limits." << '\n';
+                                  << samplesPerRank << " exceeds the single-FFT cuFFT limit (~" << maxCufft1dLength
+                                  << "); increase the MPI rank count or implement tiled FFTs.\n";
                     }
                 }
                 return 1;
@@ -230,10 +234,15 @@ namespace
                 {
                     std::cout << "cuFFT provider unavailable; defaulting to host-side DFT for local spectra." << '\n';
                 }
-                else
+                else if(!sizeWithinProvider)
                 {
                     std::cout << "Local FFT length " << samplesPerRank
                               << " exceeds cuFFT limits; defaulting to host-side DFT." << '\n';
+                }
+                else
+                {
+                    std::cout << "Local FFT length " << samplesPerRank << " exceeds the single-FFT cuFFT limit (~"
+                              << maxCufft1dLength << "); defaulting to host-side DFT." << '\n';
                 }
             }
 
@@ -432,11 +441,26 @@ namespace
 
                 if(fftFailed)
                 {
+                    if(samplesPerRank > maxDirectFallbackSamples)
+                    {
+                        std::cerr << "Rank " << groupConfig.worldRank << " fallback disabled: O(N^2) DFT for "
+                                  << samplesPerRank << " samples would exhaust memory/time. Aborting.\n";
+                        return 1;
+                    }
                     localSpectrum = computeLocalFft(localSamples);
                 }
             }
             else
             {
+                if(samplesPerRank > maxDirectFallbackSamples)
+                {
+                    if(groupConfig.worldRank == 0)
+                    {
+                        std::cerr << "CPU FFT fallback unavailable for " << samplesPerRank
+                                  << " samples per rank; enable cuFFT or add more ranks." << '\n';
+                    }
+                    return 1;
+                }
                 localSpectrum = computeLocalFft(localSamples);
             }
 
