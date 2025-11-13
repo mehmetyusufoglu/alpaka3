@@ -258,7 +258,7 @@ namespace
             }
 
             auto const firstIndex = static_cast<std::size_t>(groupConfig.worldRank);
-            auto const lastIndex = firstIndex + (samplesPerRank - 1) * participantCount;
+            auto const lastIndex = firstIndex + (samplesPerRank > 0 ? (samplesPerRank - 1) * participantCount : 0);
             std::cout << "Rank " << groupConfig.worldRank << " owns " << samplesPerRank << " strided samples (indices "
                       << firstIndex << " to " << lastIndex << ").\n";
             if(options.signalFile && groupConfig.worldRank == 0)
@@ -478,13 +478,17 @@ namespace
                 std::cout << "Rank " << groupConfig.worldRank << " contribution stats: max |X|=" << magnitudeMax
                           << ", mean |X|=" << magnitudeMean << '\n';
 
-                std::size_t const contributionPreview = std::min<std::size_t>(8, contributions.size());
-                std::cout << "Rank " << groupConfig.worldRank << " contribution preview:";
-                for(std::size_t idx = 0; idx < contributionPreview; ++idx)
+                std::size_t const stridedPreview = std::min<std::size_t>(8, samplesPerRank);
+                std::cout << "Rank " << groupConfig.worldRank << " contribution preview (bins rank + m*stride):";
+                for(std::size_t idx = 0; idx < stridedPreview; ++idx)
                 {
-                    std::cout << ' ' << idx << ':' << contributions[idx];
+                    std::size_t const globalIndex
+                        = static_cast<std::size_t>(groupConfig.worldRank) + idx * participantCount;
+                    if(globalIndex >= contributions.size())
+                        break;
+                    std::cout << ' ' << globalIndex << ':' << contributions[globalIndex];
                 }
-                if(contributions.size() > contributionPreview)
+                if(samplesPerRank > stridedPreview)
                 {
                     std::cout << " ...";
                 }
