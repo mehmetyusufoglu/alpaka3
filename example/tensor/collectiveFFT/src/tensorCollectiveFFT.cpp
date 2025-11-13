@@ -190,6 +190,15 @@ namespace
                 return 0;
             }
 
+            constexpr std::size_t maxDirectVerifySamples = 1U << 16; // 65536 bins keep O(N^2) reasonable
+            bool const directVerifyActive = options.verifyDirect && globalSamples <= maxDirectVerifySamples;
+            if(options.verifyDirect && !directVerifyActive && groupConfig.worldRank == 0)
+            {
+                std::cout << "Skipping --verify-direct for signal length " << globalSamples << " (exceeds "
+                          << maxDirectVerifySamples
+                          << "); run with a smaller preview or offline verification if needed.\n";
+            }
+
             bool const providerAvailable
                 = tt::EnabledVendorLibs::hasCUFFT && context.supportsOperation(tt::OpType::FFT);
             bool const sizeWithinProvider
@@ -457,57 +466,32 @@ namespace
                 }
             }
 
-            // Version 2 pipeline step 4: apply stride-dependent phases and lay out global contributions.
-            auto contributions = detail::buildRankContribution(
-                std::span{localSpectrum},
-                groupConfig.worldRank,
-                participantCount,
-                globalSamples);
+            // Version 2 pipeline step 4: stream the global spectrum in tiles so we never allocate N-sized buffers.
+            std::cout << "Rank " << groupConfig.worldRank
+                      << " assembling contributions with tiled all-reduce (tile size selected for memory bounds).\n";
 
-            if(!contributions.empty())
+            constexpr std::size_t defaultTile = 1U << 18; // 262144 bins (~2 MB of complex float data)
+            std::size_t const tileCapacity
+                = std::max<std::size_t>(1, std::min<std::size_t>(defaultTile, globalSamples));
+            std::vector<std::complex<float>> tileContributions(tileCapacity, std::complex<float>{0.0f, 0.0f});
+            bool const collectFullSpectrum = directVerifyActive || options.referenceFftFile.has_value();
+            std::vector<std::complex<float>> globalSpectrum;
+            if(collectFullSpectrum)
             {
-                double magnitudeSum = 0.0;
-                float magnitudeMax = 0.0f;
-                for(auto const& value : contributions)
-                {
-                    float const magnitude = std::abs(value);
-                    magnitudeSum += static_cast<double>(magnitude);
-                    magnitudeMax = std::max(magnitudeMax, magnitude);
-                }
-                double const magnitudeMean = magnitudeSum / static_cast<double>(contributions.size());
-                std::cout << "Rank " << groupConfig.worldRank << " contribution stats: max |X|=" << magnitudeMax
-                          << ", mean |X|=" << magnitudeMean << '\n';
-
-                std::size_t const stridedPreview = std::min<std::size_t>(8, samplesPerRank);
-                std::cout << "Rank " << groupConfig.worldRank << " contribution preview (bins rank + m*stride):";
-                for(std::size_t idx = 0; idx < stridedPreview; ++idx)
-                {
-                    std::size_t const globalIndex
-                        = static_cast<std::size_t>(groupConfig.worldRank) + idx * participantCount;
-                    if(globalIndex >= contributions.size())
-                        break;
-                    std::cout << ' ' << globalIndex << ':' << contributions[globalIndex];
-                }
-                if(samplesPerRank > stridedPreview)
-                {
-                    std::cout << " ...";
-                }
-                std::cout << '\n';
+                globalSpectrum.assign(globalSamples, std::complex<float>{0.0f, 0.0f});
             }
-
-            // Version 1 pipeline step 5: stage contributions in an alpaka tensor and move to the CUDA device.
-            std::vector<float> interleaved(contributions.size() * 2U, 0.0f);
-            for(std::size_t k = 0; k < contributions.size(); ++k)
+            std::size_t const previewLimit = std::min<std::size_t>(options.previewBins, globalSamples);
+            std::vector<std::complex<float>> previewSpectrum;
+            if(!collectFullSpectrum && previewLimit > 0U)
             {
-                interleaved[2 * k] = contributions[k].real();
-                interleaved[2 * k + 1] = contributions[k].imag();
+                previewSpectrum.assign(previewLimit, std::complex<float>{0.0f, 0.0f});
             }
+            std::size_t previewWritten = 0U;
 
-            tt::Tensor1D<float, Device> spectralTensor(device, {interleaved.size()}, "fft-global-spectrum");
+            tt::Tensor1D<float, Device> spectralTensor(device, {tileCapacity * 2U}, "fft-global-spectrum-tile");
             auto* hostTensor = spectralTensor.hostData();
-            std::copy(interleaved.begin(), interleaved.end(), hostTensor);
-            spectralTensor.markHostModified();
 
+            // Allocate device storage once; per-tile uploads will refresh the active prefix.
             spectralTensor.ensureOnDevice(device, queue);
             alpaka::onHost::wait(queue);
             auto& deviceBuffer = spectralTensor.deviceBuffer(device, queue);
@@ -523,41 +507,114 @@ namespace
 
             collective::AllReduceRequest request{};
             request.buffers = buffers;
-            request.elementCount = spectralTensor.size();
             request.dataType = collective::DataType::Float32;
             request.reduceOp = collective::ReduceOp::Sum;
 
-            // Version 1 pipeline step 6: use NCCL all-reduce on device memory to assemble the global FFT.
-            auto const reduceStatus = context.collectiveAllReduce(request);
-            if(reduceStatus != tt::OpStatus::Success)
+            for(std::size_t tileOffset = 0; tileOffset < globalSamples; tileOffset += tileCapacity)
             {
-                std::cerr << "ncclAllReduce returned status=" << static_cast<int>(reduceStatus)
-                          << "; cannot assemble global FFT.\n";
-                return 1;
+                std::size_t const tileLength = std::min<std::size_t>(tileCapacity, globalSamples - tileOffset);
+                auto tileSpan = std::span<std::complex<float>>{tileContributions.data(), tileLength};
+
+                detail::buildContributionTile(
+                    std::span<std::complex<float> const>{localSpectrum.data(), localSpectrum.size()},
+                    groupConfig.worldRank,
+                    participantCount,
+                    globalSamples,
+                    tileOffset,
+                    tileSpan);
+
+                if(tileOffset == 0 && !tileSpan.empty())
+                {
+                    std::size_t const stridedPreview = std::min<std::size_t>(8, samplesPerRank);
+                    std::cout << "Rank " << groupConfig.worldRank << " contribution preview (bins rank + m*stride):";
+                    for(std::size_t idx = 0; idx < stridedPreview; ++idx)
+                    {
+                        std::size_t const globalIndex
+                            = static_cast<std::size_t>(groupConfig.worldRank) + idx * participantCount;
+                        if(globalIndex >= globalSamples)
+                            break;
+                        std::size_t const localOffset = globalIndex - tileOffset;
+                        if(localOffset >= tileSpan.size())
+                            break;
+                        std::cout << ' ' << globalIndex << ':' << tileSpan[localOffset];
+                    }
+                    if(samplesPerRank > stridedPreview)
+                    {
+                        std::cout << " ...";
+                    }
+                    std::cout << '\n';
+                }
+
+                for(std::size_t i = 0; i < tileLength; ++i)
+                {
+                    hostTensor[2 * i] = tileSpan[i].real();
+                    hostTensor[2 * i + 1] = tileSpan[i].imag();
+                }
+
+                spectralTensor.markHostModified();
+                spectralTensor.ensureOnDevice(device, queue);
+                alpaka::onHost::wait(queue);
+
+                request.elementCount = tileLength * 2U;
+                auto const reduceStatus = context.collectiveAllReduce(request);
+                if(reduceStatus != tt::OpStatus::Success)
+                {
+                    std::cerr << "ncclAllReduce returned status=" << static_cast<int>(reduceStatus)
+                              << "; cannot assemble global FFT.\n";
+                    return 1;
+                }
+
+                spectralTensor.markDeviceModified(device, queue);
+                spectralTensor.toHost(device, queue);
+                alpaka::onHost::wait(queue);
+
+                auto const* reducedHost = spectralTensor.hostData();
+                if(collectFullSpectrum)
+                {
+                    for(std::size_t i = 0; i < tileLength; ++i)
+                    {
+                        globalSpectrum[tileOffset + i]
+                            = std::complex<float>{reducedHost[2 * i], reducedHost[2 * i + 1]};
+                    }
+                }
+                else if(!previewSpectrum.empty() && previewWritten < previewSpectrum.size())
+                {
+                    std::size_t const toCopy
+                        = std::min<std::size_t>(previewSpectrum.size() - previewWritten, tileLength);
+                    for(std::size_t i = 0; i < toCopy; ++i)
+                    {
+                        previewSpectrum[previewWritten + i]
+                            = std::complex<float>{reducedHost[2 * i], reducedHost[2 * i + 1]};
+                    }
+                    previewWritten += toCopy;
+                }
             }
 
-            // Version 1 pipeline step 7: bring the merged spectrum back to host space for inspection.
-            spectralTensor.markDeviceModified(device, queue);
-            spectralTensor.toHost(device, queue);
-            alpaka::onHost::wait(queue);
-
-            auto const* reducedHost = spectralTensor.hostData();
-            std::vector<std::complex<float>> globalSpectrum(globalSamples, std::complex<float>{0.0f, 0.0f});
-            for(std::size_t k = 0; k < globalSamples; ++k)
+            if(collectFullSpectrum)
             {
-                globalSpectrum[k] = std::complex<float>{reducedHost[2 * k], reducedHost[2 * k + 1]};
+                detail::printSpectrumPreview(groupConfig.worldRank, globalSpectrum, options.previewBins);
             }
-
-            detail::printSpectrumPreview(groupConfig.worldRank, globalSpectrum, options.previewBins);
+            else if(groupConfig.worldRank == 0 && !previewSpectrum.empty())
+            {
+                std::cout << "First " << previewSpectrum.size()
+                          << " frequency bins (partial preview, streaming mode):\n";
+                for(std::size_t k = 0; k < previewSpectrum.size(); ++k)
+                {
+                    auto const value = previewSpectrum[k];
+                    std::cout << "  k=" << k << " : " << value.real() << "  " << value.imag()
+                              << "i  |X|=" << std::abs(value) << '\n';
+                }
+                std::cout << "Dominant bin search skipped (full spectrum not retained).\n";
+            }
 
             if(groupConfig.worldRank == 0)
             {
-                std::cout << "Verification settings: direct=" << (options.verifyDirect ? "on" : "off")
+                std::cout << "Verification settings: direct=" << (directVerifyActive ? "on" : "off")
                           << ", reference=" << (options.referenceFftFile ? "path supplied" : "none")
                           << ", abs tol=" << options.verifyAbsTolerance << ", rel tol=" << options.verifyRelTolerance
                           << '\n';
 
-                if(options.verifyDirect)
+                if(directVerifyActive)
                 {
                     std::cout << "Direct DFT precision: "
                               << (options.verifyPrecision == DirectVerifyPrecision::Float64 ? "float64" : "float32")
@@ -597,7 +654,7 @@ namespace
                     return ok;
                 };
 
-                bool verificationRequested = options.verifyDirect || options.referenceFftFile.has_value();
+                bool verificationRequested = directVerifyActive || options.referenceFftFile.has_value();
                 bool verificationSucceeded = true;
                 bool verificationPerformed = false;
 
@@ -622,7 +679,7 @@ namespace
                     }
                 }
 
-                if(options.verifyDirect)
+                if(directVerifyActive)
                 {
                     if(globalSamples > (1U << 15))
                     {
