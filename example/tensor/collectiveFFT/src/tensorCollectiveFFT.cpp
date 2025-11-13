@@ -477,6 +477,18 @@ namespace
                 double const magnitudeMean = magnitudeSum / static_cast<double>(contributions.size());
                 std::cout << "Rank " << groupConfig.worldRank << " contribution stats: max |X|=" << magnitudeMax
                           << ", mean |X|=" << magnitudeMean << '\n';
+
+                std::size_t const contributionPreview = std::min<std::size_t>(8, contributions.size());
+                std::cout << "Rank " << groupConfig.worldRank << " contribution preview:";
+                for(std::size_t idx = 0; idx < contributionPreview; ++idx)
+                {
+                    std::cout << ' ' << idx << ':' << contributions[idx];
+                }
+                if(contributions.size() > contributionPreview)
+                {
+                    std::cout << " ...";
+                }
+                std::cout << '\n';
             }
 
             // Version 1 pipeline step 5: stage contributions in an alpaka tensor and move to the CUDA device.
