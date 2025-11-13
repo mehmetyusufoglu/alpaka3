@@ -46,35 +46,42 @@ namespace collectiveFft::detail
         return std::nullopt;
     }
 
-    std::vector<std::complex<float>> buildRankContribution(
+    void buildContributionTile(
         std::span<std::complex<float> const> localSpectrum,
         int worldRank,
         std::size_t worldSize,
-        std::size_t totalSamples)
+        std::size_t totalSamples,
+        std::size_t tileOffset,
+        std::span<std::complex<float>> tileBuffer)
     {
+        (void) worldSize;
         std::size_t const samplesPerRank = localSpectrum.size();
-        std::vector<std::complex<float>> contributions(totalSamples, std::complex<float>{0.0f, 0.0f});
-        if(samplesPerRank == 0 || totalSamples == 0)
-            return contributions;
+        if(samplesPerRank == 0 || totalSamples == 0 || tileBuffer.empty())
+            return;
 
-        // Strided ownership means each rank r observes samples x[r + m*worldSize]. The global FFT bin k
-        // therefore receives the local spectrum bin k mod samplesPerRank, rotated by the phase introduced
-        // by the rank offset r.
+        // Each tile maps to a contiguous range [tileOffset, tileOffset + tileBuffer.size()).
+        // We only touch bins inside the global domain; callers supply offsets that honour bounds.
         constexpr double twoPi = 6.283185307179586476925286766559;
         double const totalSamplesAsDouble = static_cast<double>(totalSamples);
-        for(std::size_t k = 0; k < totalSamples; ++k)
+        for(std::size_t localIdx = 0; localIdx < tileBuffer.size(); ++localIdx)
         {
-            std::size_t const localIndex = k % samplesPerRank;
-            auto const localValue = localSpectrum[localIndex];
+            std::size_t const globalBin = tileOffset + localIdx;
+            if(globalBin >= totalSamples)
+                break;
+
+            // Strided ownership: bin k depends on the rank's spectrum entry at k mod samplesPerRank.
+            std::size_t const spectrumIndex = globalBin % samplesPerRank;
+            auto const localValue = localSpectrum[spectrumIndex];
+
+            // Phase shift encodes the offset introduced by taking every worldSize-th sample.
             double const angle
-                = -twoPi * static_cast<double>(worldRank) * static_cast<double>(k) / totalSamplesAsDouble;
+                = -twoPi * static_cast<double>(worldRank) * static_cast<double>(globalBin) / totalSamplesAsDouble;
             float const cosAngle = static_cast<float>(std::cos(angle));
             float const sinAngle = static_cast<float>(std::sin(angle));
             std::complex<float> const phase{cosAngle, sinAngle};
-            contributions[k] = localValue * phase;
-        }
 
-        return contributions;
+            tileBuffer[localIdx] = localValue * phase;
+        }
     }
 
     void printSpectrumPreview(int worldRank, std::vector<std::complex<float>> const& spectrum, std::size_t previewBins)

@@ -12,11 +12,13 @@ namespace collectiveFft::detail
 {
     [[nodiscard]] std::optional<int> discoverLocalRank(MultiProcessBootstrap const& bootstrap);
 
-    std::vector<std::complex<float>> buildRankContribution(
+    void buildContributionTile(
         std::span<std::complex<float> const> localSpectrum,
         int worldRank,
         std::size_t worldSize,
-        std::size_t totalSamples);
+        std::size_t totalSamples,
+        std::size_t tileOffset,
+        std::span<std::complex<float>> tileBuffer);
 
     void printSpectrumPreview(
         int worldRank,
