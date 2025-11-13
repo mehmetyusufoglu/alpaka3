@@ -30,6 +30,7 @@
 #include <alpaka/tensor/providers/collective/CollectiveTypes.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <complex>
 #include <cstddef>
 #include <cstdlib>
@@ -40,6 +41,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -287,12 +289,29 @@ namespace
 
             if(useProviderFft)
             {
+                if(groupConfig.worldRank > 0)
+                {
+                    auto const delay = std::chrono::milliseconds(100 * groupConfig.worldRank);
+                    std::this_thread::sleep_for(delay);
+                }
+
+                if(groupConfig.worldRank == 0)
+                {
+                    std::cout << "[Rank 0] cuFFT context=" << static_cast<void const*>(&context)
+                              << " device=" << deviceId << " samples=" << samplesPerRank << '\n';
+                }
+
                 tt::Tensor1D<std::complex<float>, Device> deviceInput(device, {samplesPerRank}, "fft-local-input");
                 tt::Tensor1D<std::complex<float>, Device> deviceOutput(device, {samplesPerRank}, "fft-local-output");
 
                 auto* hostInputPtr = deviceInput.hostData();
                 std::copy(localSamples.begin(), localSamples.end(), hostInputPtr);
                 deviceInput.markHostModified();
+
+                if(groupConfig.worldRank == 0 && !localSamples.empty())
+                {
+                    std::cout << "[Rank 0] first input sample before upload=" << hostInputPtr[0] << '\n';
+                }
 
                 deviceInput.ensureOnDevice(device, queue);
                 alpaka::onHost::wait(queue);
@@ -308,6 +327,7 @@ namespace
                 fftParams.direction = tt::ops::FftDirection::Forward;
                 fftParams.inPlace = false;
 
+                bool fftFailed = false;
                 try
                 {
                     context.fft(deviceInput, deviceOutput, fftParams);
@@ -318,18 +338,40 @@ namespace
                     alpaka::onHost::wait(queue);
 
                     auto const* hostOutputPtr = deviceOutput.hostData();
-                    localSpectrum.assign(hostOutputPtr, hostOutputPtr + samplesPerRank);
+                    std::vector<std::complex<float>> deviceSpectrum(hostOutputPtr, hostOutputPtr + samplesPerRank);
+
+                    bool const spectrumLooksZero = std::all_of(
+                        deviceSpectrum.begin(),
+                        deviceSpectrum.begin() + std::min<std::size_t>(deviceSpectrum.size(), 16),
+                        [](std::complex<float> const& value) { return std::abs(value) < 1.0e-6f; });
 
                     if(groupConfig.worldRank == 0)
                     {
-                        std::cout << "Rank " << groupConfig.worldRank
-                                  << " cuFFT succeeded, first output value: " << localSpectrum[0] << '\n';
+                        std::cout << "[Rank 0] first cuFFT output sample="
+                                  << (deviceSpectrum.empty() ? std::complex<float>{} : deviceSpectrum.front())
+                                  << " (zero spectrum check=" << (spectrumLooksZero ? "yes" : "no") << ")\n";
+                    }
+
+                    if(spectrumLooksZero)
+                    {
+                        std::cerr << "Rank " << groupConfig.worldRank
+                                  << " cuFFT spectrum appears zero; falling back to host DFT.\n";
+                        fftFailed = true;
+                    }
+                    else
+                    {
+                        localSpectrum = std::move(deviceSpectrum);
                     }
                 }
                 catch(std::exception const& e)
                 {
                     std::cerr << "Rank " << groupConfig.worldRank << " cuFFT failed: " << e.what()
                               << "; falling back to host DFT.\n";
+                    fftFailed = true;
+                }
+
+                if(fftFailed)
+                {
                     localSpectrum = computeLocalFft(localSamples);
                 }
             }
