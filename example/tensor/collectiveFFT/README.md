@@ -115,6 +115,33 @@ Adjust tolerances as needed to match the precision of upstream generators. Disab
 the direct check with `--skip-verify` when using very large signals or when an
 external FFT provides the baseline.
 
+## cuFFT Size Limits and Scaling
+
+cuFFT imposes a hard limit on single 1D FFT transforms: **approximately 67,108,864
+complex samples** (2²⁶) per GPU. When `samplesPerRank` exceeds this threshold,
+cuFFT silently returns a zero spectrum, triggering the code's naive O(N²) CPU
+fallback—which exhausts memory and time for large signals.
+
+**Symptoms:**
+- Logs show "cuFFT spectrum appears zero; falling back to host DFT."
+- Rank processes are killed (signal 9) if the fallback attempts to allocate huge
+  temporary buffers.
+
+**Solution:**
+Increase the MPI rank count so that `signal-length / ranks ≤ 67,108,864`. For
+example:
+- 548,222,976 samples requires at least **9 GPUs** (≈ 60.9M per rank).
+- Using 12 or 16 GPUs provides comfortable headroom (≈ 45.7M or 34.3M per rank).
+
+The code now detects this limit at startup and aborts with a clear message instead
+of triggering the catastrophic fallback. Requesting additional host memory
+(`--mem=...`) **does not help**; the constraint is cuFFT's internal architecture,
+not VRAM or host RAM availability.
+
+For signals exceeding what a reasonable GPU count can handle, consider implementing
+a tiled/overlap-save FFT or switching to a distributed FFT library designed for
+extreme-scale transforms.
+
 ## Troubleshooting Notes
 
 - Missing CUDA/NCCL: the executable falls back to host executors and prints a

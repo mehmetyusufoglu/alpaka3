@@ -13,6 +13,7 @@
    ```bash
    salloc -N2 -n4 --partition=casus_a100 --gres=gpu:2 --time=00:30:00
    # For more resources : salloc -N2 -n8 --partition=casus_a100 --gres=gpu:4 --time=00:3
+   # For more memory per GPU --mem can be used: salloc --nodes=1 --gres=gpu:4 --mem=128G
    srun --jobid=$SLURM_JOB_ID --pty bash -l
    ```
 3. **Build the demo on the compute node**
@@ -59,9 +60,28 @@ mpirun -n 4 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscri
       ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=548222976 \
       --force-provider-fft --skip-verify
    ```
-   ⚠️ 548,222,976 complex samples require roughly 8.8 GiB per rank (two full-sized buffers before NCCL),
+   ⚠️ 548,222,976 complex samples require roughly 8.8 GiB per rank (two full-sized buffers before NCCL),
    so with four ranks per node Hemera's OOM killer will terminate the job unless extra memory nodes are
    requested or the algorithm is refactored to avoid the full-spectrum staging.
+
+   3 nodes, 12 gpus
+   ```bash
+   cd ~/alpaka3/build
+   mpirun -n 12 --hostfile hostfile --map-by ppr:4:node --bind-to none --oversubscribe \
+      -x NCCL_ROOT -x LD_LIBRARY_PATH \
+      ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=548222976 \
+      --force-provider-fft --skip-verify
+   ```
+
+     4 nodes, 16 gpus
+   ```bash
+   cd ~/alpaka3/build
+   mpirun -n 16 --hostfile hostfile --map-by ppr:4:node --bind-to none --oversubscribe \
+      -x NCCL_ROOT -x LD_LIBRARY_PATH \
+      ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=548222976 \
+      --force-provider-fft --skip-verify
+   ```
+
 6. **Confirm output**
    - Each rank reports its strided sample range.
    - Rank 0 prints a spectrum preview and verification result.
@@ -103,3 +123,15 @@ make
    - `-x NCCL_ROOT -x LD_LIBRARY_PATH`: forward required NCCL and CUDA library paths to each rank.
    - `--signal-length=548222976`: request the large global FFT size to stay under per-rank cuFFT limits.
    - `--force-provider-fft --skip-verify`: insist on GPU FFT execution and disable O(N^2) verification for large input.
+
+## Memory Allocation for Large Runs
+
+When running very large FFTs (hundreds of millions of samples), the NCCL all-reduce phase can require substantial memory for communication buffers. If ranks are killed with signal 9 during execution, request all available node memory:
+
+```bash
+salloc -N4 -n16 --partition=casus_a100 --gres=gpu:4 --mem=0 --time=00:30:00
+```
+
+The `--mem=0` flag allocates all available memory on each node, preventing OOM kills during the collective communication phase. This is particularly important when running 4+ ranks per node with signal sizes approaching 2^29 samples.
+
+Alternatively, specify an explicit amount (e.g., `--mem=200G`) if you know the per-node requirement.
