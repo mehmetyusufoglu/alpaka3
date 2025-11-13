@@ -8,7 +8,6 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
-#include <numbers>
 
 namespace
 {
@@ -58,33 +57,21 @@ namespace collectiveFft::detail
         if(samplesPerRank == 0 || totalSamples == 0)
             return contributions;
 
-        constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
-        constexpr std::size_t debugPreviewBins = 8;
-        for(std::size_t q = 0; q < samplesPerRank; ++q)
+        // Strided ownership means each rank r observes samples x[r + m*worldSize]. The global FFT bin k
+        // therefore receives the local spectrum bin k mod samplesPerRank, rotated by the phase introduced
+        // by the rank offset r.
+        constexpr double twoPi = 6.283185307179586476925286766559;
+        double const totalSamplesAsDouble = static_cast<double>(totalSamples);
+        for(std::size_t k = 0; k < totalSamples; ++k)
         {
-            float angleBase
-                = -twoPi * static_cast<float>(worldRank) * static_cast<float>(q) / static_cast<float>(totalSamples);
-            std::complex<float> const basePhase = std::polar(1.0f, angleBase);
-
-            for(std::size_t t = 0; t < worldSize; ++t)
-            {
-                float angleAcross
-                    = -twoPi * static_cast<float>(worldRank) * static_cast<float>(t) / static_cast<float>(worldSize);
-                std::complex<float> const acrossPhase = std::polar(1.0f, angleAcross);
-                std::size_t const globalIndex = q + t * samplesPerRank;
-                if(globalIndex >= contributions.size())
-                    continue;
-
-                contributions[globalIndex] = localSpectrum[q] * basePhase * acrossPhase;
-
-                if(q < debugPreviewBins && globalIndex < debugPreviewBins)
-                {
-                    std::cout << "[buildRankContribution] rank=" << worldRank << " q=" << q << " t=" << t
-                              << " globalIndex=" << globalIndex << " local=" << localSpectrum[q]
-                              << " basePhase=" << basePhase << " acrossPhase=" << acrossPhase
-                              << " contribution=" << contributions[globalIndex] << '\n';
-                }
-            }
+            std::size_t const localIndex = k % samplesPerRank;
+            auto const localValue = localSpectrum[localIndex];
+            double const angle
+                = -twoPi * static_cast<double>(worldRank) * static_cast<double>(k) / totalSamplesAsDouble;
+            float const cosAngle = static_cast<float>(std::cos(angle));
+            float const sinAngle = static_cast<float>(std::sin(angle));
+            std::complex<float> const phase{cosAngle, sinAngle};
+            contributions[k] = localValue * phase;
         }
 
         return contributions;
