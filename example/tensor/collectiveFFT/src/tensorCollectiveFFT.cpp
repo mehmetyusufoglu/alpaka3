@@ -289,17 +289,16 @@ namespace
 
             if(useProviderFft)
             {
-                if(groupConfig.worldRank > 0)
-                {
-                    auto const delay = std::chrono::milliseconds(100 * groupConfig.worldRank);
-                    std::this_thread::sleep_for(delay);
-                }
+                // if(groupConfig.worldRank > 0)
+                // {
+                //     auto const delay = std::chrono::milliseconds(100 * groupConfig.worldRank);
+                //     std::this_thread::sleep_for(delay);
+                // }
 
-                if(groupConfig.worldRank == 0)
-                {
-                    std::cout << "[Rank 0] cuFFT context=" << static_cast<void const*>(&context)
-                              << " device=" << deviceId << " samples=" << samplesPerRank << '\n';
-                }
+
+                std::cout << "[Rank 0] cuFFT context=" << static_cast<void const*>(&context) << " device=" << deviceId
+                          << " samples=" << samplesPerRank << '\n';
+
 
                 tt::Tensor1D<std::complex<float>, Device> deviceInput(device, {samplesPerRank}, "fft-local-input");
                 tt::Tensor1D<std::complex<float>, Device> deviceOutput(device, {samplesPerRank}, "fft-local-output");
