@@ -35,6 +35,30 @@ if(CMAKE_CUDA_COMPILER)
         set_property(TARGET alpaka_target_cuda PROPERTY CUDA_STANDARD ${alpaka_CXX_STANDARD})
     endif()
 
+    # GCC 13 unconditionally pulls in AMX headers via <immintrin.h>. nvcc's
+    # front-end does not provide the AMX builtins, which leads to compile
+    # errors. Guard the AMX headers so they remain inert unless the user
+    # explicitly enables AMX when compiling pure host code.
+    # NOTE: This branch hits the amxtileintrin.h:42 error
+    #       (`__builtin_ia32_ldtilecfg` undefined) while upstream alpaka3
+    #       currently does not—root cause still needs investigation.
+    if(${_alpaka_CUDA_HOST_COMPILER} STREQUAL "GNU")
+        foreach(
+            _alpaka_amx_guard
+            _AMXTILEINTRIN_H_INCLUDED
+            _AMXINT8INTRIN_H_INCLUDED
+            _AMXBF16INTRIN_H_INCLUDED
+            _AMXCOMPLEXINTRIN_H_INCLUDED
+            _AMXFP16INTRIN_H_INCLUDED
+        )
+            alpaka_set_compiler_options(
+                DEVICE
+                target alpaka_target_cuda
+                "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler=-D${_alpaka_amx_guard}>"
+            )
+        endforeach()
+    endif()
+
     alpaka_set_compiler_options(DEVICE target alpaka_target_cuda "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:--expt-relaxed-constexpr>")
 
     option(alpaka_CUDA_EXPT_EXTENDED_LAMBDA "Enable CUDA extended lambda support " ON)

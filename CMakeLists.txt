@@ -11,6 +11,7 @@ project(alpaka)
 set(_alpaka_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR})
 set(_alpaka_CMAKE_DIR "${_alpaka_ROOT_DIR}/cmake")
 set(_alpaka_FEATURE_TESTS_DIR "${_alpaka_CMAKE_DIR}/tests")
+set(_alpaka_TESTING_DIR "${_alpaka_ROOT_DIR}/tests")
 
 # Vendor math/DNN libraries are auto-detected when their backend (CUDA/HIP) is enabled;
 # no explicit toggle options are required.
