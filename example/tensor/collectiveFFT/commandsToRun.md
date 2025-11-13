@@ -12,7 +12,7 @@
    - `--gres=gpu:<count>` requests generic GPU resources per node (e.g., `--gres=gpu:2` for two GPUs per node).
    ```bash
    salloc -N2 -n4 --partition=casus_a100 --gres=gpu:2 --time=00:30:00
-   # For more resources : salloc -N2 -n8 --partition=casus_a100 --gres=gpu:4 --time=00:30:00
+   # For more resources : salloc -N2 -n8 --partition=casus_a100 --gres=gpu:4 --time=00:3
    srun --jobid=$SLURM_JOB_ID --pty bash -l
    ```
 3. **Build the demo on the compute node**
@@ -30,7 +30,7 @@
    cd ~/alpaka3/build
    mpirun -n 4 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscribe \
           -x NCCL_ROOT -x LD_LIBRARY_PATH \
-          ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=65536 \
+          ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=2048 \
           --disable-provider-fft
    ```
    _Note: `--disable-provider-fft` uses host-side DFT until cuFFT provider path is repaired._
@@ -41,7 +41,7 @@
    mpirun -n 4 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscribe \
        -x NCCL_ROOT -x LD_LIBRARY_PATH \
        ./example/tensor/collectiveFFT/tensorCollectiveFFT \
-       --signal-length=65536 \
+       --signal-length=2048 \
        --verify-abs=1e-1 --verify-rel=5e-3 \
        --verify-direct-precision=float
     ```
@@ -67,3 +67,39 @@ mpirun -n 4 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscri
    - Rank 0 prints a spectrum preview and verification result.
    - "Distributed FFT complete" message indicates success.
 make 
+
+
+
+## Scaling To Eight GPUs Across Four Nodes
+
+1. **Request a larger allocation (login node)**
+   ```bash
+   salloc -N4 -n8 --partition=casus_a100 --gres=gpu:2 --time=00:45:00
+   srun --jobid=$SLURM_JOB_ID --pty bash -l
+   ```
+   - `-N4`: reserve four nodes to host two GPUs each.
+   - `-n8`: launch eight MPI ranks total (one per GPU).
+   - `--partition=casus_a100`: pick the A100-equipped queue.
+   - `--gres=gpu:2`: expose two GPUs on every allocated node.
+   - `--time=00:45:00`: keep the reservation for 45 minutes.
+   - `srun --jobid=$SLURM_JOB_ID --pty bash -l`: open an interactive shell on the compute allocation.
+2. **Generate an eight-slot hostfile on the compute node**
+   ```bash
+   scontrol show hostnames "$SLURM_JOB_NODELIST" | awk '{print $0 " slots=2"}' > hostfile
+   ```
+3. **Launch the FFT demo using eight ranks (login node)**
+   ```bash
+   cd ~/alpaka3/build
+   mpirun -n 8 --hostfile hostfile --map-by ppr:2:node --bind-to none --oversubscribe \
+      -x NCCL_ROOT -x LD_LIBRARY_PATH \
+      ./example/tensor/collectiveFFT/tensorCollectiveFFT --signal-length=548222976 \
+      --force-provider-fft --skip-verify
+   ```
+   - `-n 8`: start one MPI process per GPU.
+   - `--hostfile hostfile`: reuse the eight-slot hostfile generated on the compute nodes.
+   - `--map-by ppr:2:node`: place two ranks on each node (matching two GPUs per node).
+   - `--bind-to none`: prevent OpenMPI from pinning ranks to specific CPU cores.
+   - `--oversubscribe`: allow OpenMPI to launch even if logical CPU slots appear exhausted.
+   - `-x NCCL_ROOT -x LD_LIBRARY_PATH`: forward required NCCL and CUDA library paths to each rank.
+   - `--signal-length=548222976`: request the large global FFT size to stay under per-rank cuFFT limits.
+   - `--force-provider-fft --skip-verify`: insist on GPU FFT execution and disable O(N^2) verification for large input.
