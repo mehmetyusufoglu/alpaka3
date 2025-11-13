@@ -56,13 +56,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -Dalpaka_ENABLE_COLLECTIVES=ON -Dalpaka_ENABLE_NCCL=ON
 cmake --build build --target tensorFft3D -j8
 
-# Launch the demo directly in the interactive compute-node shell.
+# Launch the demo with srun so the GPU resource is correctly bound.
 cd ~/alpaka3/build
-./example/tensor/fft3D/tensorFft3D --size=64 --verbose
-
-# If you leave the interactive shell and need a fresh run, start a new step explicitly.
-# srun --nodes=1 --ntasks=1 --gpus-per-task=1 \
-#     ./example/tensor/fft3D/tensorFft3D --size=64 --verbose
+srun -n 1 --gpus-per-task=1 ./example/tensor/fft3D/tensorFft3D --size=64 --verbose
 ```
 
 Adjust `--size`/`--nx`/`--ny`/`--nz` and `--batch` to explore different problem
@@ -73,7 +69,7 @@ For a rectangular signal matching your 672 × 1344 × 607 grid, invoke the
 real-valued path to reduce GPU memory pressure:
 
 ```bash
-./example/tensor/fft3D/tensorFft3D \
+srun -n 1 --gpus-per-task=1 ./example/tensor/fft3D/tensorFft3D \
   --nx=672 --ny=1344 --nz=607 --signal-type=real --no-verify --verbose
 ```
 
