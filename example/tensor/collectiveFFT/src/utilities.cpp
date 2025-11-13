@@ -59,6 +59,7 @@ namespace collectiveFft::detail
             return contributions;
 
         constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
+        constexpr std::size_t debugPreviewBins = 8;
         for(std::size_t q = 0; q < samplesPerRank; ++q)
         {
             float angleBase
@@ -75,6 +76,14 @@ namespace collectiveFft::detail
                     continue;
 
                 contributions[globalIndex] = localSpectrum[q] * basePhase * acrossPhase;
+
+                if(q < debugPreviewBins && globalIndex < debugPreviewBins)
+                {
+                    std::cout << "[buildRankContribution] rank=" << worldRank << " q=" << q << " t=" << t
+                              << " globalIndex=" << globalIndex << " local=" << localSpectrum[q]
+                              << " basePhase=" << basePhase << " acrossPhase=" << acrossPhase
+                              << " contribution=" << contributions[globalIndex] << '\n';
+                }
             }
         }
 
