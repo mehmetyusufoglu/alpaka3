@@ -283,6 +283,18 @@ namespace
                 double const magnitudeMean = sampleMagnitudeSum / static_cast<double>(localSamples.size());
                 std::cout << "Rank " << groupConfig.worldRank << " local samples stats: max |x|=" << sampleMagnitudeMax
                           << ", mean |x|=" << magnitudeMean << '\n';
+
+                std::size_t const previewCount = std::min<std::size_t>(8, localSamples.size());
+                std::cout << "Rank " << groupConfig.worldRank << " sample preview:";
+                for(std::size_t idx = 0; idx < previewCount; ++idx)
+                {
+                    std::cout << ' ' << idx << ':' << localSamples[idx];
+                }
+                if(localSamples.size() > previewCount)
+                {
+                    std::cout << " ...";
+                }
+                std::cout << '\n';
             }
 
             std::vector<std::complex<float>> localSpectrum;
@@ -296,7 +308,8 @@ namespace
                 // }
 
 
-                std::cout << "[Rank 0] cuFFT context=" << static_cast<void const*>(&context) << " device=" << deviceId
+                std::cout << "[Rank " << groupConfig.worldRank
+                          << "] cuFFT context=" << static_cast<void const*>(&context) << " device=" << deviceId
                           << " samples=" << samplesPerRank << '\n';
 
 
@@ -307,6 +320,11 @@ namespace
                 std::copy(localSamples.begin(), localSamples.end(), hostInputPtr);
                 deviceInput.markHostModified();
 
+                std::cout << "[Rank " << groupConfig.worldRank
+                          << "] deviceInput host ptr=" << static_cast<void*>(hostInputPtr)
+                          << ", sample[0]=" << (samplesPerRank > 0 ? hostInputPtr[0] : std::complex<float>{})
+                          << ", sample[1]=" << (samplesPerRank > 1 ? hostInputPtr[1] : std::complex<float>{}) << '\n';
+
                 if(groupConfig.worldRank == 0 && !localSamples.empty())
                 {
                     std::cout << "[Rank 0] first input sample before upload=" << hostInputPtr[0] << '\n';
@@ -315,8 +333,22 @@ namespace
                 deviceInput.ensureOnDevice(device, queue);
                 alpaka::onHost::wait(queue);
 
+                {
+                    auto& inputDeviceBuffer = deviceInput.deviceBuffer(device, queue);
+                    auto* devicePtr = alpaka::onHost::data(inputDeviceBuffer);
+                    std::cout << "[Rank " << groupConfig.worldRank
+                              << "] deviceInput device ptr=" << static_cast<void*>(devicePtr) << " uploaded" << '\n';
+                }
+
                 deviceOutput.ensureOnDevice(device, queue);
                 alpaka::onHost::wait(queue);
+
+                {
+                    auto& outputDeviceBuffer = deviceOutput.deviceBuffer(device, queue);
+                    auto* devicePtr = alpaka::onHost::data(outputDeviceBuffer);
+                    std::cout << "[Rank " << groupConfig.worldRank
+                              << "] deviceOutput device ptr=" << static_cast<void*>(devicePtr) << " staged" << '\n';
+                }
 
                 tt::ops::FftParams fftParams{};
                 fftParams.rank = 1;
@@ -330,6 +362,7 @@ namespace
                 try
                 {
                     context.fft(deviceInput, deviceOutput, fftParams);
+                    std::cout << "[Rank " << groupConfig.worldRank << "] cuFFT dispatched" << '\n';
                     deviceOutput.markDeviceModified(device, queue);
                     alpaka::onHost::wait(queue);
 
@@ -337,6 +370,9 @@ namespace
                     alpaka::onHost::wait(queue);
 
                     auto const* hostOutputPtr = deviceOutput.hostData();
+                    std::cout << "[Rank " << groupConfig.worldRank
+                              << "] deviceOutput host ptr=" << static_cast<void const*>(hostOutputPtr)
+                              << " post-download" << '\n';
                     std::vector<std::complex<float>> deviceSpectrum(hostOutputPtr, hostOutputPtr + samplesPerRank);
 
                     bool const spectrumLooksZero = std::all_of(
@@ -349,6 +385,22 @@ namespace
                         std::cout << "[Rank 0] first cuFFT output sample="
                                   << (deviceSpectrum.empty() ? std::complex<float>{} : deviceSpectrum.front())
                                   << " (zero spectrum check=" << (spectrumLooksZero ? "yes" : "no") << ")\n";
+                    }
+
+                    if(!deviceSpectrum.empty())
+                    {
+                        std::cout << "[Rank " << groupConfig.worldRank
+                                  << "] cuFFT output preview: 0:" << deviceSpectrum[0];
+                        std::size_t const outputPreview = std::min<std::size_t>(4, deviceSpectrum.size());
+                        for(std::size_t idx = 1; idx < outputPreview; ++idx)
+                        {
+                            std::cout << ' ' << idx << ':' << deviceSpectrum[idx];
+                        }
+                        if(deviceSpectrum.size() > outputPreview)
+                        {
+                            std::cout << " ...";
+                        }
+                        std::cout << '\n';
                     }
 
                     if(spectrumLooksZero)
