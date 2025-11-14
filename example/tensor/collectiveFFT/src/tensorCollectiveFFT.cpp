@@ -501,8 +501,8 @@ namespace
             }
             /**
              * Version 2 pipeline step 4: stream the global spectrum back in fixed-size tiles rather than
-             * allocating an N-length buffer per rank. Each pass uploads only tileCapacity bins to the GPU,
-             * runs the NCCL all-reduce on that slice, and copies the reduced result to host. The reuse of
+             * allocating an N-length full buffer per rank. Each pass uploads only tileCapacity of frequency bins to
+             * the GPU, runs the NCCL all-reduce on that slice, and copies the reduced result to host. The reuse of
              * those buffers keeps memory bounded regardless of the global FFT length and lets very large
              * signals complete without exhausting device or host space.
              */
@@ -554,6 +554,7 @@ namespace
                 std::size_t const tileLength = std::min<std::size_t>(tileCapacity, globalSamples - tileOffset);
                 auto tileSpan = std::span<std::complex<float>>{tileContributions.data(), tileLength};
 
+                // TODO: Implement alias unmixing so strided FFT slices combine all alias bands, not just the first.
                 detail::buildContributionTile(
                     std::span<std::complex<float> const>{localSpectrum.data(), localSpectrum.size()},
                     groupConfig.worldRank,

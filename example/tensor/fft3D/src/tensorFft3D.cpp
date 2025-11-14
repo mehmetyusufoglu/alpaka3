@@ -263,6 +263,8 @@ namespace
 
             if(options.verifyInverse)
             {
+                // Inverse FFT serves as a round-trip check: context.fft executes the batched inverse transform,
+                // and we compare the recovered volume with the original host signal below.
                 tt::ops::FftParams inverseParams = forwardParams;
                 inverseParams.direction = tt::ops::FftDirection::Inverse;
                 context.fft(deviceOutput, deviceInput, inverseParams);
@@ -277,6 +279,8 @@ namespace
 
                 for(std::size_t idx = 0; idx < totalElements; ++idx)
                 {
+                    // cuFFT leaves both forward and inverse transforms unscaled, so divide by N to restore
+                    // the original amplitudes before computing the error against hostSignal.
                     std::complex<float> recovered = recoveredPtr[idx] / normalization;
                     std::complex<float> reference = hostSignal[idx];
                     std::complex<float> diff = recovered - reference;
