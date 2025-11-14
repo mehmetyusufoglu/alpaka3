@@ -16,6 +16,7 @@
 #include "alpaka/interface.hpp"
 #include "alpaka/internal/interface.hpp"
 #include "alpaka/meta/NdLoop.hpp"
+#include "alpaka/onAcc/internal/globalMem.hpp"
 #include "alpaka/onHost/FrameSpec.hpp"
 #include "alpaka/onHost/Handle.hpp"
 #include "alpaka/onHost/interface.hpp"
@@ -104,12 +105,11 @@ namespace alpaka::onHost
 #endif
                     // return a ready future-like placeholder; reuse CallbackThread interface minimally
                     std::promise<void> p;
+                    auto f = p.get_future();
                     p.set_value();
 #if defined(__GNUC__) && !defined(__clang__)
 #    pragma GCC diagnostic pop
 #endif
-                    auto f = p.get_future();
-
                     // to keep the uniform interface with the non-blocking case,
                     // return by moving the f since it is move-only
                     return f;
@@ -215,6 +215,7 @@ namespace alpaka::onHost
             friend struct internal::Wait;
             friend struct internal::WaitFor;
             friend struct internal::Memcpy;
+            friend struct internal::MemcpyDeviceGlobal;
             friend struct internal::Memset;
             friend struct alpaka::internal::GetApi;
             friend struct internal::AllocDeferred;
@@ -334,8 +335,8 @@ namespace alpaka::onHost
                 /* Get all required properties outside the lambda function to not extend the life-time of the data.
                  * The life-time is not extended to have some life-time behaviours with all backends.
                  */
-                auto* destPtr = toVoidPtr(alpaka::onHost::data(ALPAKA_FORWARD(dest)));
-                auto const* srcPtr = toVoidPtr(alpaka::onHost::data(source));
+                void* destPtr = toVoidPtr(alpaka::onHost::data(ALPAKA_FORWARD(dest)));
+                void const* srcPtr = toVoidPtr(alpaka::onHost::data(source));
 
                 if constexpr(dim == 1u)
                 {
@@ -372,6 +373,48 @@ namespace alpaka::onHost
                             }
                         });
                 }
+            }
+        };
+
+        // copy to device global memory
+        template<typename T_Device, typename T_Source, typename T_Storage, typename T>
+        struct internal::MemcpyDeviceGlobal::
+            Op<cpu::Queue<T_Device>, onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T>, T_Source>
+        {
+            void operator()(
+                cpu::Queue<T_Device>& queue,
+                onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T> dest,
+                auto&& source) const
+            {
+                ALPAKA_LOG_FUNCTION(onHost::logger::memory + onHost::logger::queue);
+                auto* destPtr = dest.getHandle(api::host).data();
+                void const* srcPtr{nullptr};
+                if constexpr(std::is_pointer_v<ALPAKA_TYPEOF(source)>)
+                    srcPtr = source;
+                else
+                    srcPtr = toVoidPtr(alpaka::onHost::data(ALPAKA_FORWARD(source)));
+                queue.submit([destPtr, srcPtr]() { std::memcpy(destPtr, srcPtr, sizeof(T)); });
+            }
+        };
+
+        // copy from device global memory
+        template<typename T_Device, typename T_Dest, typename T_Storage, typename T>
+        struct internal::MemcpyDeviceGlobal::
+            Op<cpu::Queue<T_Device>, T_Dest, onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T>>
+        {
+            void operator()(
+                cpu::Queue<T_Device>& queue,
+                auto&& dest,
+                onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T> source) const
+            {
+                ALPAKA_LOG_FUNCTION(onHost::logger::memory + onHost::logger::queue);
+                void* destPtr{nullptr};
+                if constexpr(std::is_pointer_v<ALPAKA_TYPEOF(dest)>)
+                    destPtr = dest;
+                else
+                    destPtr = toVoidPtr(alpaka::onHost::data(ALPAKA_FORWARD(dest)));
+                auto const* srcPtr = source.getHandle(api::host).data();
+                queue.submit([destPtr, srcPtr]() { std::memcpy(destPtr, srcPtr, sizeof(T)); });
             }
         };
 

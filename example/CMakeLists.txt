@@ -1,5 +1,5 @@
 #
-# Copyright 2023 Benjamin Worpitz, Jan Stephan
+# Copyright 2023 Ben Worpitz, Jan Stephan
 # SPDX-License-Identifier: ISC
 #
 
@@ -20,6 +20,14 @@ add_subdirectory("grayScale/")
 add_subdirectory("heatEquation2D/")
 add_subdirectory("nBody/")
 add_subdirectory("scan/")
-add_subdirectory("vectorAdd/")
+add_subdirectory("tensor/tensor2DExample/")
+add_subdirectory("tensor/tensorGemmExample/")
+add_subdirectory("tensor/conv2DGeneric/")
+add_subdirectory("tensor/inferenceDemo/")
+add_subdirectory("tensor/trainingDemo/")
+add_subdirectory("tensor/collectiveDemo/")
+add_subdirectory("tensor/collectiveFFT/")
+add_subdirectory("tensor/fft3D/")
 add_subdirectory("tutorial/")
 add_subdirectory("alpaka-ls/")
+add_subdirectory("vectorAdd/")

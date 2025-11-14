@@ -25,20 +25,82 @@ Host, device, mapped, and managed multi-dimensional views provide a natural way 
 
 This repository separates the development of [mainline alpaka](https://github.com/alpaka-group/alpaka) from the upcoming major release, which introduces breaking changes compared to previous versions.
 
-Software License
-----------------
+Roadmaps and Integration Plans
+------------------------------
 
-**alpaka** is licensed under **MPL-2.0**.
+- ATen compatibility and backend strategy: `include/alpaka/tensor/ATenCompatibilityRoadmap.md`
+- Python bindings (pybind11) and interop plan: `include/alpaka/tensor/Pybind11IntegrationRoadmap.md`
 
-Documentation
--------------
+ATen-minimal (Phase 1) usage
+----------------------------
 
-The documentation is available at: https://alpaka3.readthedocs.io
+This repository ships a minimal ATen-like shim for tensors and a few ops to ease integration and testing. The scope is intentionally small (Float32; ranks 1–2; add and matmul) and correctness-first.
 
-### cross compile on x86 for riscv
+Key headers:
+- `include/alpaka/tensor/aten/DynamicTensor.hpp` — runtime-typed wrapper over static tensors
+- `include/alpaka/tensor/aten/Ops.hpp` — ATen-like ops: `aten::add`, `aten::matmul`
 
-Tested on https://riscv.epcc.ed.ac.uk/
+Quick example:
 
+```c++
+#include <alpaka/alpaka.hpp>
+#include <alpaka/onHost/example/executors.hpp>
+#include <alpaka/tensor/adapters/aten/DynamicTensor.hpp>
+#include <alpaka/tensor/adapters/aten/Ops.hpp>
+
+using namespace alpaka;
+using namespace alpaka::tensor;
+using namespace alpaka::tensor::aten;
+
+int main() {
+    auto cfg = onHost::example::defaultBackend(); // or use allBackends in tests
+    auto selector = onHost::makeDeviceSelector(cfg[object::deviceSpec]);
+    if(!selector.isAvailable()) return 0;
+    auto device = selector.makeDevice(0);
+    auto queue = device.makeQueue();
+    auto exec = cfg[object::exec];
+
+    // Create 2D Float32 tensors A(3x5) and B(3x5):
+    tensor::Tensor2D<float, decltype(device)> A(device, {3,5}, "A");
+    tensor::Tensor2D<float, decltype(device)> B(device, {3,5}, "B");
+    for(std::size_t i=0;i<3;i++)
+      for(std::size_t j=0;j<5;j++){
+        A.hostData()[i*5+j] = static_cast<float>(i + j);
+        B.hostData()[i*5+j] = static_cast<float>(i - j);
+      }
+    A.markHostModified();
+    B.markHostModified();
+
+    auto Ad = DynamicTensor<decltype(device)>::wrap<float,2>(std::move(A));
+    auto Bd = DynamicTensor<decltype(device)>::wrap<float,2>(std::move(B));
+
+    // ATen-like add: C = A + B (shape and dtype must match exactly)
+    auto Cd = aten::add(exec, device, queue, Ad, Bd);
+    auto& C2 = Cd.as<float,2>();
+    C2.toHost(device, queue);
+
+    // ATen-like matmul: D = E @ F for 2D Float32
+    tensor::Tensor2D<float, decltype(device)> E(device, {4,6}, "E");
+    tensor::Tensor2D<float, decltype(device)> F(device, {6,3}, "F");
+    E.markHostModified();
+    F.markHostModified();
+    auto Ed = DynamicTensor<decltype(device)>::wrap<float,2>(std::move(E));
+    auto Fd = DynamicTensor<decltype(device)>::wrap<float,2>(std::move(F));
+    auto Dd = aten::matmul(exec, device, queue, Ed, Fd);
+    auto& D2 = Dd.as<float,2>();
+    D2.toHost(device, queue);
+}
+```
+
+### Optional Vendor Math/DNN Libraries (cuBLAS, cuDNN, rocBLAS, MIOpen)
+
+Alpaka tensor/provider layers are fully functional without any proprietary or platform vendor math/DNN libraries. Detection is automatic:
+
+* When the CUDA backend is enabled, Alpaka probes for cuBLAS and cuDNN. If found, they are linked and the corresponding compile definitions (`ALPAKA_HAS_CUBLAS`, `ALPAKA_HAS_CUDNN`) are set. If not, Alpaka prints a short status message and uses the generic kernels.
+* When the HIP backend is enabled, Alpaka probes for rocBLAS and MIOpen in the same fashion.
+* Collective communication providers are gated behind the new `alpaka_ENABLE_COLLECTIVES` switch (enabled by default). When the CUDA toolchain is present, Alpaka looks for NCCL and defines `ALPAKA_HAS_NCCL`; with HIP it checks for RCCL and defines `ALPAKA_HAS_RCCL`. If either library is missing, runtime automatically falls back to peer-to-peer or host-mediated paths without failing configuration.
+* No CMake options are required—auto-detection is always on—and missing libraries never cause configuration to fail.
+* If the libraries become available later, a reconfigure automatically enables the accelerated providers; otherwise runtime remains correct via generic kernels without loader errors.
 ```bash
 module load riscv64-linux/gnu-12.2
 # download the latest CMake 3.3X and set it to your environment PATH variable
@@ -94,7 +156,6 @@ You should not include header files with a relative path from your source files.
 
 alpaka is currently not providing an installation target therefore you should use `add_subdirectory(path/to/alpaka)` in your CMakeLists.txt.
 
-- standard application enabling API's depending on the cmake dependencies selected
     ```cmake
     # call: cmake -Dalpaka_DEP_CUDA=ON pathToAlpaka
     add_executable(fooTarget src/main.cpp)
@@ -102,7 +163,6 @@ alpaka is currently not providing an installation target therefore you should us
     target_link_libraries(fooTarget PUBLIC alpaka)
     alpaka_finalize(fooTarget)
     ```
-- build a shared library
     ```cmake
     # call: cmake -Dalpaka_DEP_CUDA=ON pathToAlpaka
     add_library(fooShared SHARED src/foo.cpp)
@@ -112,7 +172,6 @@ alpaka is currently not providing an installation target therefore you should us
     add_executable(fooTarget src/main.cpp)
     target_link_libraries(fooTarget PRIVATE fooShared)
     ```
-- standard application which prefer manual selection of the API's
     ```cmake
     # call: cmake -Dalpaka_DEP_CUDA=ON pathToAlpaka
     add_executable(fooTarget src/main.cpp)
@@ -121,7 +180,6 @@ alpaka is currently not providing an installation target therefore you should us
     target_link_libraries(fooTarget PUBLIC alpaka::cuda)
     alpaka_finalize(fooTarget)
     ```  
-- using more than one dependency 
     ```cmake
     # call: cmake -Dalpaka_DEP_CUDA=ON -Dalpaka_DEP_HIP=ON pathToAlpaka
     add_executable(fooTarget src/main.cpp)
@@ -134,6 +192,29 @@ alpaka is currently not providing an installation target therefore you should us
     # provides access to host, HIP API
     target_link_libraries(barTarget PUBLIC alpaka alpaka::hip)
     alpaka_finalize(barTarget)
+
+### Optional vendor libraries
+
+When CUDA or ROCm toolchains are detected, alpaka automatically probes for vendor math libraries. These integrations are
+**optional**. If the runtime does not ship a particular library (for example cuDNN on minimal CUDA installations),
+alpaka falls back to its generic kernels without failing the build. No configuration switches are needed: re-running
+`cmake` after installing the libraries is enough to pick up the acceleration providers.
+
+### Optional Vendor Math/DNN Libraries (cuBLAS, cuDNN, rocBLAS, MIOpen)
+
+Alpaka tensor/provider layers are fully functional without any proprietary or platform vendor math/DNN libraries.
+
+Behavior summary:
+* Auto-detection is always on. When cuBLAS/cuDNN or rocBLAS/MIOpen are present alongside the respective backend, alpaka
+  links them and defines the corresponding compile definitions `ALPAKA_HAS_CUBLAS`, `ALPAKA_HAS_CUDNN`, `ALPAKA_HAS_ROCBLAS`, `ALPAKA_HAS_MIOPEN`.
+* If a library is not found, a STATUS message documents the fallback and the build proceeds using the generic alpaka
+  kernels—there is no loss of correctness, only a potential performance delta.
+* Alpaka only adds libraries after verification, preventing runtime loader errors (such as `$\\texttt{libcublas.so}$` not
+  found) on systems where the vendor packages are missing.
+
+This “never fail for optional acceleration” philosophy ensures reproducible portable builds across CI, developer
+laptops, and clusters with heterogeneous toolchain provisioning.
+
     ```
 
 Coding

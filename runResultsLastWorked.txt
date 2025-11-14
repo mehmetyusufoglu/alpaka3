@@ -1,0 +1,764 @@
+[yusufo81@hemera5 build]$ mpirun -n 16 --hostfile hostfile --map-by ppr:4:node --bind-to none --oversubscribe \
+>     -x NCCL_ROOT -x LD_LIBRARY_PATH \
+>     ./example/tensor/collectiveFFT/tensorCollectiveFFT \
+>     --signal-length=536870912 \
+>     --force-provider-fft --skip-verify
+ga011:111046:111046 [0] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.53<0>
+ga011:111046:111046 [0] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga011:111046:111046 [0] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+
+=== tensor Collective FFT ===
+API: Host
+Executor: alpaka::exec::CpuOmpBlocks
+World size: 16
+Local size: 4
+Collective provider for NCCL is only available on CUDA executors; skipping.
+
+=== tensor Collective FFT ===
+API: Host
+Executor: alpaka::exec::CpuSerial
+World size: 16
+Local size: 4
+Collective provider for NCCL is only available on CUDA executors; skipping.
+Rank 3 using device 3
+Rank 2 using device 2
+Rank 1 using device 1
+
+=== tensor Collective FFT ===
+API: Cuda
+Executor: alpaka::exec::GpuCuda
+World size: 16
+Local size: 4
+Rank 0 using device 0
+ga011:111046:111046 [0] NCCL INFO cudaDriverVersion 12010
+NCCL version 2.18.5+cuda12.2
+ga011:111046:111046 [0] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga011:111046:111046 [0] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.53<0>
+ga011:111046:111046 [0] NCCL INFO Using network IB
+ga011:111047:111047 [1] NCCL INFO cudaDriverVersion 12010
+ga011:111047:111047 [1] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.53<0>
+ga011:111047:111047 [1] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga011:111047:111047 [1] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga011:111047:111047 [1] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga011:111047:111047 [1] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.53<0>
+ga011:111047:111047 [1] NCCL INFO Using network IB
+ga011:111049:111049 [3] NCCL INFO cudaDriverVersion 12010
+ga011:111049:111049 [3] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.53<0>
+ga011:111049:111049 [3] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga011:111049:111049 [3] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga011:111048:111048 [2] NCCL INFO cudaDriverVersion 12010
+ga011:111049:111049 [3] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga011:111048:111048 [2] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.53<0>
+ga011:111048:111048 [2] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga011:111048:111048 [2] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga011:111048:111048 [2] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga011:111049:111049 [3] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.53<0>
+ga011:111049:111049 [3] NCCL INFO Using network IB
+ga011:111048:111048 [2] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.53<0>
+ga011:111048:111048 [2] NCCL INFO Using network IB
+Rank 12 using device 0
+Rank 15 using device 3
+Rank 11 using device 3
+Rank 8 using device 0
+Rank 9 using device 1
+Rank 14 using device 2
+Rank 5 using device 1
+Rank 13 using device 1
+Rank 4 using device 0
+Rank 7 using device 3
+Rank 10 using device 2
+Rank 6 using device 2
+ga015:52038:52038 [0] NCCL INFO cudaDriverVersion 12010
+ga014:116564:116564 [1] NCCL INFO cudaDriverVersion 12010
+ga015:52038:52038 [0] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.57<0>
+ga015:52038:52038 [0] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga015:52038:52038 [0] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga015:52038:52038 [0] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga015:52041:52041 [3] NCCL INFO cudaDriverVersion 12010
+ga015:52039:52039 [1] NCCL INFO cudaDriverVersion 12010
+ga014:116563:116563 [0] NCCL INFO cudaDriverVersion 12010
+ga014:116564:116564 [1] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.56<0>
+ga014:116563:116563 [0] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.56<0>
+ga014:116564:116564 [1] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga014:116563:116563 [0] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga014:116564:116564 [1] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga014:116564:116564 [1] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga015:52040:52040 [2] NCCL INFO cudaDriverVersion 12010
+ga014:116563:116563 [0] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga015:52039:52039 [1] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.57<0>
+ga015:52039:52039 [1] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga015:52039:52039 [1] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga014:116563:116563 [0] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga015:52039:52039 [1] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga015:52041:52041 [3] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.57<0>
+ga015:52041:52041 [3] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga015:52041:52041 [3] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga015:52041:52041 [3] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga015:52040:52040 [2] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.57<0>
+ga015:52040:52040 [2] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga015:52040:52040 [2] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga015:52040:52040 [2] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga014:116566:116566 [3] NCCL INFO cudaDriverVersion 12010
+ga014:116566:116566 [3] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.56<0>
+ga014:116566:116566 [3] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga014:116566:116566 [3] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga014:116566:116566 [3] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga015:52038:52038 [0] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.57<0>
+ga015:52038:52038 [0] NCCL INFO Using network IB
+ga014:116563:116563 [0] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.56<0>
+ga014:116563:116563 [0] NCCL INFO Using network IB
+ga014:116564:116564 [1] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.56<0>
+ga015:52039:52039 [1] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.57<0>
+ga015:52039:52039 [1] NCCL INFO Using network IB
+ga014:116564:116564 [1] NCCL INFO Using network IB
+ga015:52041:52041 [3] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.57<0>
+ga015:52041:52041 [3] NCCL INFO Using network IB
+ga014:116565:116565 [2] NCCL INFO cudaDriverVersion 12010
+ga015:52040:52040 [2] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.57<0>
+ga015:52040:52040 [2] NCCL INFO Using network IB
+ga013:121219:121219 [1] NCCL INFO cudaDriverVersion 12010
+ga014:116565:116565 [2] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.56<0>
+ga014:116565:116565 [2] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga014:116565:116565 [2] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga014:116565:116565 [2] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga014:116566:116566 [3] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.56<0>
+ga014:116566:116566 [3] NCCL INFO Using network IB
+ga013:121217:121217 [0] NCCL INFO cudaDriverVersion 12010
+ga013:121219:121219 [1] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.55<0>
+ga013:121219:121219 [1] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga013:121219:121219 [1] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga013:121219:121219 [1] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga013:121217:121217 [0] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.55<0>
+ga013:121217:121217 [0] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga013:121217:121217 [0] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga013:121217:121217 [0] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga013:121220:121220 [2] NCCL INFO cudaDriverVersion 12010
+ga013:121221:121221 [3] NCCL INFO cudaDriverVersion 12010
+ga013:121221:121221 [3] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.55<0>
+ga013:121221:121221 [3] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga013:121221:121221 [3] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga013:121221:121221 [3] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga013:121220:121220 [2] NCCL INFO Bootstrap : Using enp97s0f0:10.0.23.55<0>
+ga013:121220:121220 [2] NCCL INFO NET/Plugin : Plugin load (libnccl-net.so) returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory
+ga013:121220:121220 [2] NCCL INFO NET/Plugin : No plugin found, using internal implementation
+ga013:121220:121220 [2] NCCL INFO NCCL_IB_DISABLE set by environment to 0.
+ga013:121219:121219 [1] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.55<0>
+ga013:121219:121219 [1] NCCL INFO Using network IB
+ga013:121217:121217 [0] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.55<0>
+ga013:121217:121217 [0] NCCL INFO Using network IB
+ga013:121221:121221 [3] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.55<0>
+ga014:116565:116565 [2] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.56<0>
+ga013:121221:121221 [3] NCCL INFO Using network IB
+ga014:116565:116565 [2] NCCL INFO Using network IB
+ga013:121220:121220 [2] NCCL INFO NET/IB : Using [0]mlx5_1:1/IB [1]mlx5_0:1/IB ; OOB enp97s0f0:10.0.23.55<0>
+ga013:121220:121220 [2] NCCL INFO Using network IB
+ga013:121220:121220 [2] NCCL INFO comm 0x79da8b0 rank 6 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init START
+ga013:121221:121221 [3] NCCL INFO comm 0x79f5a90 rank 7 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga014:116563:116563 [0] NCCL INFO comm 0x79fbe80 rank 8 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga014:116564:116564 [1] NCCL INFO comm 0x79fc000 rank 9 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init START
+ga015:52039:52039 [1] NCCL INFO comm 0x79fbbe0 rank 13 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init START
+ga015:52040:52040 [2] NCCL INFO comm 0x79fc000 rank 14 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init START
+ga014:116565:116565 [2] NCCL INFO comm 0x79fbe70 rank 10 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init START
+ga015:52041:52041 [3] NCCL INFO comm 0x79fbd60 rank 15 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga013:121217:121217 [0] NCCL INFO comm 0x79fbb80 rank 4 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga011:111049:111049 [3] NCCL INFO comm 0x7a00a30 rank 3 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga011:111047:111047 [1] NCCL INFO comm 0x7a06a20 rank 1 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init START
+ga013:121219:121219 [1] NCCL INFO comm 0x79d4810 rank 5 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init START
+ga011:111046:111046 [0] NCCL INFO comm 0x79f0a50 rank 0 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga011:111048:111048 [2] NCCL INFO comm 0x7a06bb0 rank 2 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init START
+ga014:116566:116566 [3] NCCL INFO comm 0x79fc130 rank 11 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga015:52038:52038 [0] NCCL INFO comm 0x7a0cab0 rank 12 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init START
+ga013:121220:121220 [2] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga013:121220:121220 [2] NCCL INFO NVLS multicast support is not available on dev 2
+ga013:121221:121221 [3] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga013:121219:121219 [1] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga013:121221:121221 [3] NCCL INFO NVLS multicast support is not available on dev 3
+ga013:121219:121219 [1] NCCL INFO Setting affinity for GPU 1 to 01
+ga013:121219:121219 [1] NCCL INFO NVLS multicast support is not available on dev 1
+ga014:116563:116563 [0] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga014:116563:116563 [0] NCCL INFO Setting affinity for GPU 0 to 01
+ga014:116563:116563 [0] NCCL INFO NVLS multicast support is not available on dev 0
+ga014:116564:116564 [1] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga014:116564:116564 [1] NCCL INFO Setting affinity for GPU 1 to 01
+ga014:116564:116564 [1] NCCL INFO NVLS multicast support is not available on dev 1
+ga014:116565:116565 [2] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga014:116565:116565 [2] NCCL INFO NVLS multicast support is not available on dev 2
+ga014:116566:116566 [3] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga014:116566:116566 [3] NCCL INFO NVLS multicast support is not available on dev 3
+ga013:121217:121217 [0] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga013:121217:121217 [0] NCCL INFO Setting affinity for GPU 0 to 01
+ga013:121217:121217 [0] NCCL INFO NVLS multicast support is not available on dev 0
+ga015:52038:52038 [0] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga015:52038:52038 [0] NCCL INFO Setting affinity for GPU 0 to 01
+ga015:52038:52038 [0] NCCL INFO NVLS multicast support is not available on dev 0
+ga015:52039:52039 [1] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga015:52039:52039 [1] NCCL INFO Setting affinity for GPU 1 to 01
+ga015:52039:52039 [1] NCCL INFO NVLS multicast support is not available on dev 1
+ga015:52041:52041 [3] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga011:111049:111049 [3] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga015:52041:52041 [3] NCCL INFO NVLS multicast support is not available on dev 3
+ga011:111047:111047 [1] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga011:111048:111048 [2] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga011:111049:111049 [3] NCCL INFO NVLS multicast support is not available on dev 3
+ga011:111047:111047 [1] NCCL INFO Setting affinity for GPU 1 to 1fff
+ga011:111047:111047 [1] NCCL INFO NVLS multicast support is not available on dev 1
+ga011:111046:111046 [0] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga011:111048:111048 [2] NCCL INFO NVLS multicast support is not available on dev 2
+ga011:111046:111046 [0] NCCL INFO Setting affinity for GPU 0 to 1fff
+ga011:111046:111046 [0] NCCL INFO NVLS multicast support is not available on dev 0
+ga015:52040:52040 [2] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+ga015:52040:52040 [2] NCCL INFO NVLS multicast support is not available on dev 2
+ga013:121217:121217 [0] NCCL INFO Trees [0] 5/-1/-1->4->7 [1] 5/-1/-1->4->7 [2] 5/-1/-1->4->7 [3] 5/-1/-1->4->7
+ga013:121217:121217 [0] NCCL INFO P2P Chunksize set to 131072
+ga013:121217:121217 [0] NCCL INFO Channel 00/0 : 4[0] -> 7[3] via P2P/IPC/read
+ga013:121219:121219 [1] NCCL INFO Trees [0] -1/-1/-1->5->4 [1] -1/-1/-1->5->4 [2] -1/-1/-1->5->4 [3] -1/-1/-1->5->4
+ga013:121219:121219 [1] NCCL INFO P2P Chunksize set to 131072
+ga013:121220:121220 [2] NCCL INFO Trees [0] 7/-1/-1->6->11 [1] 7/-1/-1->6->11 [2] 7/2/-1->6->14 [3] 7/2/-1->6->14
+ga013:121220:121220 [2] NCCL INFO P2P Chunksize set to 131072
+ga013:121221:121221 [3] NCCL INFO Trees [0] 4/-1/-1->7->6 [1] 4/-1/-1->7->6 [2] 4/10/-1->7->6 [3] 4/10/-1->7->6
+ga013:121221:121221 [3] NCCL INFO P2P Chunksize set to 131072
+ga014:116563:116563 [0] NCCL INFO Trees [0] 9/-1/-1->8->11 [1] 9/-1/-1->8->11 [2] 9/-1/-1->8->11 [3] 9/-1/-1->8->11
+ga014:116563:116563 [0] NCCL INFO P2P Chunksize set to 131072
+ga014:116563:116563 [0] NCCL INFO Channel 00/0 : 8[0] -> 11[3] via P2P/IPC/read
+ga014:116564:116564 [1] NCCL INFO Trees [0] -1/-1/-1->9->8 [1] -1/-1/-1->9->8 [2] -1/-1/-1->9->8 [3] -1/-1/-1->9->8
+ga014:116564:116564 [1] NCCL INFO P2P Chunksize set to 131072
+ga013:121217:121217 [0] NCCL INFO Channel 01/0 : 4[0] -> 7[3] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Trees [0] 11/14/-1->10->2 [1] 11/14/-1->10->2 [2] 11/-1/-1->10->7 [3] 11/-1/-1->10->7
+ga014:116565:116565 [2] NCCL INFO P2P Chunksize set to 131072
+ga014:116566:116566 [3] NCCL INFO Trees [0] 8/6/-1->11->10 [1] 8/6/-1->11->10 [2] 8/-1/-1->11->10 [3] 8/-1/-1->11->10
+ga014:116566:116566 [3] NCCL INFO P2P Chunksize set to 131072
+ga015:52038:52038 [0] NCCL INFO Trees [0] 13/-1/-1->12->15 [1] 13/-1/-1->12->15 [2] 13/-1/-1->12->15 [3] 13/-1/-1->12->15
+ga011:111049:111049 [3] NCCL INFO Trees [0] 0/-1/-1->3->2 [1] 0/-1/-1->3->2 [2] 0/-1/-1->3->2 [3] 0/-1/-1->3->2
+ga011:111049:111049 [3] NCCL INFO P2P Chunksize set to 131072
+ga011:111049:111049 [3] NCCL INFO Channel 00/0 : 3[3] -> 6[2] [send] via NET/IB/0
+ga011:111049:111049 [3] NCCL INFO Channel 01/0 : 3[3] -> 6[2] [send] via NET/IB/1
+ga011:111049:111049 [3] NCCL INFO Channel 02/0 : 3[3] -> 6[2] [send] via NET/IB/0
+ga011:111049:111049 [3] NCCL INFO Channel 03/0 : 3[3] -> 6[2] [send] via NET/IB/1
+ga015:52038:52038 [0] NCCL INFO P2P Chunksize set to 131072
+ga015:52038:52038 [0] NCCL INFO Channel 00/0 : 12[0] -> 15[3] via P2P/IPC/read
+ga015:52039:52039 [1] NCCL INFO Trees [0] -1/-1/-1->13->12 [1] -1/-1/-1->13->12 [2] -1/-1/-1->13->12 [3] -1/-1/-1->13->12
+ga015:52039:52039 [1] NCCL INFO P2P Chunksize set to 131072
+ga014:116563:116563 [0] NCCL INFO Channel 01/0 : 8[0] -> 11[3] via P2P/IPC/read
+ga015:52041:52041 [3] NCCL INFO Trees [0] 12/-1/-1->15->14 [1] 12/-1/-1->15->14 [2] 12/-1/-1->15->14 [3] 12/-1/-1->15->14
+ga015:52041:52041 [3] NCCL INFO P2P Chunksize set to 131072
+ga011:111047:111047 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0 [2] -1/-1/-1->1->0 [3] -1/-1/-1->1->0
+ga011:111047:111047 [1] NCCL INFO P2P Chunksize set to 131072
+ga011:111048:111048 [2] NCCL INFO Trees [0] 3/10/-1->2->-1 [1] 3/10/-1->2->-1 [2] 3/-1/-1->2->6 [3] 3/-1/-1->2->6
+ga011:111048:111048 [2] NCCL INFO P2P Chunksize set to 131072
+ga011:111046:111046 [0] NCCL INFO Channel 00/04 :    0   3   6   5   4   7  10   9   8  11  14  13  12  15   2   1
+ga011:111046:111046 [0] NCCL INFO Channel 01/04 :    0   3   6   5   4   7  10   9   8  11  14  13  12  15   2   1
+ga011:111046:111046 [0] NCCL INFO Channel 02/04 :    0   3   6   5   4   7  10   9   8  11  14  13  12  15   2   1
+ga011:111046:111046 [0] NCCL INFO Channel 03/04 :    0   3   6   5   4   7  10   9   8  11  14  13  12  15   2   1
+ga011:111046:111046 [0] NCCL INFO Trees [0] 1/-1/-1->0->3 [1] 1/-1/-1->0->3 [2] 1/-1/-1->0->3 [3] 1/-1/-1->0->3
+ga011:111046:111046 [0] NCCL INFO P2P Chunksize set to 131072
+ga011:111046:111046 [0] NCCL INFO Channel 00/0 : 0[0] -> 3[3] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Channel 01/0 : 0[0] -> 3[3] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Channel 02/0 : 0[0] -> 3[3] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Channel 03/0 : 0[0] -> 3[3] via P2P/IPC/read
+ga011:111047:111047 [1] NCCL INFO Channel 00/0 : 1[1] -> 0[0] via P2P/IPC/read
+ga011:111047:111047 [1] NCCL INFO Channel 01/0 : 1[1] -> 0[0] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 00/0 : 15[3] -> 2[2] [receive] via NET/IB/0
+ga011:111047:111047 [1] NCCL INFO Channel 02/0 : 1[1] -> 0[0] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 01/0 : 15[3] -> 2[2] [receive] via NET/IB/1
+ga011:111048:111048 [2] NCCL INFO Channel 02/0 : 15[3] -> 2[2] [receive] via NET/IB/0
+ga011:111048:111048 [2] NCCL INFO Channel 03/0 : 15[3] -> 2[2] [receive] via NET/IB/1
+ga011:111047:111047 [1] NCCL INFO Channel 03/0 : 1[1] -> 0[0] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Trees [0] 15/-1/-1->14->10 [1] 15/-1/-1->14->10 [2] 15/6/-1->14->-1 [3] 15/6/-1->14->-1
+ga015:52040:52040 [2] NCCL INFO P2P Chunksize set to 131072
+ga013:121217:121217 [0] NCCL INFO Channel 02/0 : 4[0] -> 7[3] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Connected all rings
+ga011:111046:111046 [0] NCCL INFO Channel 00/0 : 0[0] -> 1[1] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Channel 01/0 : 0[0] -> 1[1] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Channel 02/0 : 0[0] -> 1[1] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Channel 03/0 : 0[0] -> 1[1] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 00/0 : 3[3] -> 6[2] [receive] via NET/IB/0
+ga015:52038:52038 [0] NCCL INFO Channel 01/0 : 12[0] -> 15[3] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 00/0 : 7[3] -> 10[2] [receive] via NET/IB/0
+ga014:116563:116563 [0] NCCL INFO Channel 02/0 : 8[0] -> 11[3] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Channel 00/0 : 11[3] -> 14[2] [receive] via NET/IB/0
+ga013:121217:121217 [0] NCCL INFO Channel 03/0 : 4[0] -> 7[3] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 01/0 : 7[3] -> 10[2] [receive] via NET/IB/1
+ga013:121220:121220 [2] NCCL INFO Channel 01/0 : 3[3] -> 6[2] [receive] via NET/IB/1
+ga015:52038:52038 [0] NCCL INFO Channel 02/0 : 12[0] -> 15[3] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Channel 01/0 : 11[3] -> 14[2] [receive] via NET/IB/1
+ga014:116563:116563 [0] NCCL INFO Channel 03/0 : 8[0] -> 11[3] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 02/0 : 7[3] -> 10[2] [receive] via NET/IB/0
+ga013:121220:121220 [2] NCCL INFO Channel 02/0 : 3[3] -> 6[2] [receive] via NET/IB/0
+ga014:116564:116564 [1] NCCL INFO Channel 00/0 : 9[1] -> 8[0] via P2P/IPC/read
+ga015:52038:52038 [0] NCCL INFO Channel 03/0 : 12[0] -> 15[3] via P2P/IPC/read
+ga013:121219:121219 [1] NCCL INFO Channel 00/0 : 5[1] -> 4[0] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Channel 02/0 : 11[3] -> 14[2] [receive] via NET/IB/0
+ga013:121220:121220 [2] NCCL INFO Channel 03/0 : 3[3] -> 6[2] [receive] via NET/IB/1
+ga013:121220:121220 [2] NCCL INFO Channel 00/0 : 6[2] -> 5[1] via P2P/IPC/read
+ga015:52041:52041 [3] NCCL INFO Channel 00/0 : 15[3] -> 2[2] [send] via NET/IB/0
+ga014:116565:116565 [2] NCCL INFO Channel 03/0 : 7[3] -> 10[2] [receive] via NET/IB/1
+ga014:116564:116564 [1] NCCL INFO Channel 01/0 : 9[1] -> 8[0] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Channel 03/0 : 11[3] -> 14[2] [receive] via NET/IB/1
+ga015:52039:52039 [1] NCCL INFO Channel 00/0 : 13[1] -> 12[0] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 00/0 : 7[3] -> 10[2] [send] via NET/IB/0
+ga015:52041:52041 [3] NCCL INFO Channel 01/0 : 15[3] -> 2[2] [send] via NET/IB/1
+ga013:121219:121219 [1] NCCL INFO Channel 01/0 : 5[1] -> 4[0] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 01/0 : 6[2] -> 5[1] via P2P/IPC/read
+ga014:116564:116564 [1] NCCL INFO Channel 02/0 : 9[1] -> 8[0] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 00/0 : 11[3] -> 14[2] [send] via NET/IB/0
+ga015:52041:52041 [3] NCCL INFO Channel 02/0 : 15[3] -> 2[2] [send] via NET/IB/0
+ga013:121219:121219 [1] NCCL INFO Channel 02/0 : 5[1] -> 4[0] via P2P/IPC/read
+ga015:52039:52039 [1] NCCL INFO Channel 01/0 : 13[1] -> 12[0] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 01/0 : 7[3] -> 10[2] [send] via NET/IB/1
+ga014:116564:116564 [1] NCCL INFO Channel 03/0 : 9[1] -> 8[0] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 02/0 : 6[2] -> 5[1] via P2P/IPC/read
+ga015:52041:52041 [3] NCCL INFO Channel 03/0 : 15[3] -> 2[2] [send] via NET/IB/1
+ga011:111048:111048 [2] NCCL INFO Channel 00/0 : 2[2] -> 1[1] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 01/0 : 2[2] -> 1[1] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 02/0 : 2[2] -> 1[1] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 03/0 : 2[2] -> 1[1] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 01/0 : 11[3] -> 14[2] [send] via NET/IB/1
+ga011:111047:111047 [1] NCCL INFO Connected all rings
+ga011:111047:111047 [1] NCCL INFO Connected all trees
+ga011:111047:111047 [1] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga011:111047:111047 [1] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52039:52039 [1] NCCL INFO Channel 02/0 : 13[1] -> 12[0] via P2P/IPC/read
+ga013:121219:121219 [1] NCCL INFO Channel 03/0 : 5[1] -> 4[0] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 03/0 : 6[2] -> 5[1] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 02/0 : 7[3] -> 10[2] [send] via NET/IB/0
+ga014:116566:116566 [3] NCCL INFO Channel 02/0 : 11[3] -> 14[2] [send] via NET/IB/0
+ga015:52039:52039 [1] NCCL INFO Channel 03/0 : 13[1] -> 12[0] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 03/0 : 11[3] -> 14[2] [send] via NET/IB/1
+ga015:52040:52040 [2] NCCL INFO Channel 00/0 : 14[2] -> 13[1] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 03/0 : 7[3] -> 10[2] [send] via NET/IB/1
+ga014:116565:116565 [2] NCCL INFO Channel 00/0 : 10[2] -> 9[1] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 01/0 : 10[2] -> 9[1] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Connected all rings
+ga011:111048:111048 [2] NCCL INFO Channel 00/0 : 2[2] -> 3[3] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 01/0 : 2[2] -> 3[3] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 02/0 : 2[2] -> 3[3] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 03/0 : 2[2] -> 3[3] via P2P/IPC/read
+ga014:116563:116563 [0] NCCL INFO Connected all rings
+ga015:52040:52040 [2] NCCL INFO Channel 01/0 : 14[2] -> 13[1] via P2P/IPC/read
+ga014:116563:116563 [0] NCCL INFO Channel 00/0 : 8[0] -> 9[1] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Connected all rings
+ga011:111049:111049 [3] NCCL INFO Channel 00/0 : 3[3] -> 0[0] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Channel 02/0 : 2[2] -> 6[2] [send] via NET/IB/0
+ga011:111048:111048 [2] NCCL INFO Channel 03/0 : 2[2] -> 6[2] [send] via NET/IB/1
+ga011:111049:111049 [3] NCCL INFO Channel 01/0 : 3[3] -> 0[0] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Channel 02/0 : 3[3] -> 0[0] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Channel 03/0 : 3[3] -> 0[0] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Channel 00/0 : 3[3] -> 2[2] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Channel 01/0 : 3[3] -> 2[2] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Channel 02/0 : 3[3] -> 2[2] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Channel 03/0 : 3[3] -> 2[2] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 02/0 : 10[2] -> 9[1] via P2P/IPC/read
+ga011:111046:111046 [0] NCCL INFO Connected all trees
+ga011:111046:111046 [0] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga011:111046:111046 [0] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52041:52041 [3] NCCL INFO Connected all rings
+ga013:121219:121219 [1] NCCL INFO Connected all rings
+ga013:121217:121217 [0] NCCL INFO Connected all rings
+ga013:121217:121217 [0] NCCL INFO Channel 00/0 : 4[0] -> 5[1] via P2P/IPC/read
+ga014:116563:116563 [0] NCCL INFO Channel 01/0 : 8[0] -> 9[1] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Channel 02/0 : 14[2] -> 13[1] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Connected all rings
+ga013:121220:121220 [2] NCCL INFO Channel 00/0 : 6[2] -> 7[3] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 03/0 : 10[2] -> 9[1] via P2P/IPC/read
+ga015:52038:52038 [0] NCCL INFO Connected all rings
+ga015:52040:52040 [2] NCCL INFO Channel 03/0 : 14[2] -> 13[1] via P2P/IPC/read
+ga015:52038:52038 [0] NCCL INFO Channel 00/0 : 12[0] -> 13[1] via P2P/IPC/read
+ga013:121217:121217 [0] NCCL INFO Channel 01/0 : 4[0] -> 5[1] via P2P/IPC/read
+ga014:116563:116563 [0] NCCL INFO Channel 02/0 : 8[0] -> 9[1] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 01/0 : 6[2] -> 7[3] via P2P/IPC/read
+ga015:52038:52038 [0] NCCL INFO Channel 01/0 : 12[0] -> 13[1] via P2P/IPC/read
+ga013:121217:121217 [0] NCCL INFO Channel 02/0 : 4[0] -> 5[1] via P2P/IPC/read
+ga015:52039:52039 [1] NCCL INFO Connected all rings
+ga013:121220:121220 [2] NCCL INFO Channel 02/0 : 6[2] -> 7[3] via P2P/IPC/read
+ga014:116563:116563 [0] NCCL INFO Channel 03/0 : 8[0] -> 9[1] via P2P/IPC/read
+ga014:116564:116564 [1] NCCL INFO Connected all rings
+ga015:52038:52038 [0] NCCL INFO Channel 02/0 : 12[0] -> 13[1] via P2P/IPC/read
+ga013:121217:121217 [0] NCCL INFO Channel 03/0 : 4[0] -> 5[1] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 03/0 : 6[2] -> 7[3] via P2P/IPC/read
+ga015:52038:52038 [0] NCCL INFO Channel 03/0 : 12[0] -> 13[1] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Connected all rings
+ga013:121219:121219 [1] NCCL INFO Connected all trees
+ga013:121219:121219 [1] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga013:121219:121219 [1] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga014:116565:116565 [2] NCCL INFO Connected all rings
+ga014:116565:116565 [2] NCCL INFO Channel 00/0 : 10[2] -> 11[3] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Connected all rings
+ga014:116565:116565 [2] NCCL INFO Channel 01/0 : 10[2] -> 11[3] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Connected all rings
+ga015:52040:52040 [2] NCCL INFO Channel 00/0 : 14[2] -> 15[3] via P2P/IPC/read
+ga015:52039:52039 [1] NCCL INFO Connected all trees
+ga015:52039:52039 [1] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga015:52039:52039 [1] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52040:52040 [2] NCCL INFO Channel 01/0 : 14[2] -> 15[3] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 02/0 : 10[2] -> 11[3] via P2P/IPC/read
+ga014:116564:116564 [1] NCCL INFO Connected all trees
+ga014:116564:116564 [1] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga014:116564:116564 [1] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52040:52040 [2] NCCL INFO Channel 02/0 : 14[2] -> 15[3] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 02/0 : 10[2] -> 7[3] [receive] via NET/IB/0
+ga014:116565:116565 [2] NCCL INFO Channel 03/0 : 10[2] -> 11[3] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Channel 03/0 : 14[2] -> 15[3] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 02/0 : 2[2] -> 6[2] [receive] via NET/IB/0
+ga013:121221:121221 [3] NCCL INFO Channel 03/0 : 10[2] -> 7[3] [receive] via NET/IB/1
+ga013:121221:121221 [3] NCCL INFO Channel 00/0 : 7[3] -> 4[0] via P2P/IPC/read
+ga015:52041:52041 [3] NCCL INFO Channel 00/0 : 15[3] -> 12[0] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 03/0 : 2[2] -> 6[2] [receive] via NET/IB/1
+ga011:111048:111048 [2] NCCL INFO Channel 00/0 : 10[2] -> 2[2] [receive] via NET/IB/0
+ga011:111048:111048 [2] NCCL INFO Channel 01/0 : 10[2] -> 2[2] [receive] via NET/IB/1
+ga011:111048:111048 [2] NCCL INFO Channel 00/0 : 2[2] -> 10[2] [send] via NET/IB/0
+ga011:111048:111048 [2] NCCL INFO Channel 01/0 : 2[2] -> 10[2] [send] via NET/IB/1
+ga015:52040:52040 [2] NCCL INFO Channel 00/0 : 10[2] -> 14[2] [receive] via NET/IB/0
+ga013:121221:121221 [3] NCCL INFO Channel 01/0 : 7[3] -> 4[0] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 00/0 : 10[2] -> 14[2] [send] via NET/IB/0
+ga013:121220:121220 [2] NCCL INFO Channel 00/0 : 6[2] -> 11[3] [send] via NET/IB/0
+ga015:52041:52041 [3] NCCL INFO Channel 01/0 : 15[3] -> 12[0] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 00/0 : 6[2] -> 11[3] [receive] via NET/IB/0
+ga013:121221:121221 [3] NCCL INFO Channel 02/0 : 7[3] -> 4[0] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 01/0 : 6[2] -> 11[3] [send] via NET/IB/1
+ga015:52040:52040 [2] NCCL INFO Channel 01/0 : 10[2] -> 14[2] [receive] via NET/IB/1
+ga014:116565:116565 [2] NCCL INFO Channel 01/0 : 10[2] -> 14[2] [send] via NET/IB/1
+ga015:52041:52041 [3] NCCL INFO Channel 02/0 : 15[3] -> 12[0] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 03/0 : 7[3] -> 4[0] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 01/0 : 6[2] -> 11[3] [receive] via NET/IB/1
+ga015:52041:52041 [3] NCCL INFO Channel 03/0 : 15[3] -> 12[0] via P2P/IPC/read
+ga014:116565:116565 [2] NCCL INFO Channel 00/0 : 2[2] -> 10[2] [receive] via NET/IB/0
+ga014:116566:116566 [3] NCCL INFO Channel 00/0 : 11[3] -> 6[2] [send] via NET/IB/0
+ga015:52040:52040 [2] NCCL INFO Channel 02/0 : 6[2] -> 14[2] [receive] via NET/IB/0
+ga015:52041:52041 [3] NCCL INFO Channel 00/0 : 15[3] -> 14[2] via P2P/IPC/read
+ga013:121217:121217 [0] NCCL INFO Connected all trees
+ga013:121220:121220 [2] NCCL INFO Channel 02/0 : 14[2] -> 6[2] [receive] via NET/IB/0
+ga013:121217:121217 [0] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga013:121217:121217 [0] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52038:52038 [0] NCCL INFO Connected all trees
+ga014:116565:116565 [2] NCCL INFO Channel 01/0 : 2[2] -> 10[2] [receive] via NET/IB/1
+ga015:52038:52038 [0] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga015:52038:52038 [0] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga014:116566:116566 [3] NCCL INFO Channel 01/0 : 11[3] -> 6[2] [send] via NET/IB/1
+ga015:52040:52040 [2] NCCL INFO Channel 03/0 : 6[2] -> 14[2] [receive] via NET/IB/1
+ga013:121220:121220 [2] NCCL INFO Channel 03/0 : 14[2] -> 6[2] [receive] via NET/IB/1
+ga014:116565:116565 [2] NCCL INFO Channel 00/0 : 10[2] -> 2[2] [send] via NET/IB/0
+ga015:52041:52041 [3] NCCL INFO Channel 01/0 : 15[3] -> 14[2] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 02/0 : 6[2] -> 14[2] [send] via NET/IB/0
+ga014:116565:116565 [2] NCCL INFO Channel 01/0 : 10[2] -> 2[2] [send] via NET/IB/1
+ga011:111048:111048 [2] NCCL INFO Channel 02/0 : 6[2] -> 2[2] [receive] via NET/IB/0
+ga011:111048:111048 [2] NCCL INFO Channel 03/0 : 6[2] -> 2[2] [receive] via NET/IB/1
+ga015:52040:52040 [2] NCCL INFO Channel 02/0 : 14[2] -> 6[2] [send] via NET/IB/0
+ga014:116565:116565 [2] NCCL INFO Channel 00/0 : 14[2] -> 10[2] [receive] via NET/IB/0
+ga015:52041:52041 [3] NCCL INFO Channel 02/0 : 15[3] -> 14[2] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 03/0 : 6[2] -> 14[2] [send] via NET/IB/1
+ga015:52040:52040 [2] NCCL INFO Channel 03/0 : 14[2] -> 6[2] [send] via NET/IB/1
+ga014:116565:116565 [2] NCCL INFO Channel 01/0 : 14[2] -> 10[2] [receive] via NET/IB/1
+ga015:52041:52041 [3] NCCL INFO Channel 03/0 : 15[3] -> 14[2] via P2P/IPC/read
+ga015:52040:52040 [2] NCCL INFO Channel 00/0 : 14[2] -> 10[2] [send] via NET/IB/0
+ga013:121220:121220 [2] NCCL INFO Channel 00/0 : 11[3] -> 6[2] [receive] via NET/IB/0
+ga013:121220:121220 [2] NCCL INFO Channel 01/0 : 11[3] -> 6[2] [receive] via NET/IB/1
+ga015:52040:52040 [2] NCCL INFO Channel 01/0 : 14[2] -> 10[2] [send] via NET/IB/1
+ga014:116566:116566 [3] NCCL INFO Channel 00/0 : 11[3] -> 8[0] via P2P/IPC/read
+ga013:121220:121220 [2] NCCL INFO Channel 02/0 : 6[2] -> 2[2] [send] via NET/IB/0
+ga014:116565:116565 [2] NCCL INFO Channel 02/0 : 10[2] -> 7[3] [send] via NET/IB/0
+ga013:121220:121220 [2] NCCL INFO Channel 03/0 : 6[2] -> 2[2] [send] via NET/IB/1
+ga014:116566:116566 [3] NCCL INFO Channel 01/0 : 11[3] -> 8[0] via P2P/IPC/read
+ga011:111049:111049 [3] NCCL INFO Connected all trees
+ga011:111049:111049 [3] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga011:111049:111049 [3] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga014:116565:116565 [2] NCCL INFO Channel 03/0 : 10[2] -> 7[3] [send] via NET/IB/1
+ga014:116566:116566 [3] NCCL INFO Channel 02/0 : 11[3] -> 8[0] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 00/0 : 7[3] -> 6[2] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 03/0 : 11[3] -> 8[0] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 01/0 : 7[3] -> 6[2] via P2P/IPC/read
+ga015:52041:52041 [3] NCCL INFO Connected all trees
+ga015:52041:52041 [3] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga015:52041:52041 [3] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga014:116566:116566 [3] NCCL INFO Channel 00/0 : 11[3] -> 10[2] via P2P/IPC/read
+ga013:121221:121221 [3] NCCL INFO Channel 02/0 : 7[3] -> 6[2] via P2P/IPC/read
+ga014:116563:116563 [0] NCCL INFO Connected all trees
+ga014:116563:116563 [0] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga014:116563:116563 [0] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga013:121221:121221 [3] NCCL INFO Channel 03/0 : 7[3] -> 6[2] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 01/0 : 11[3] -> 10[2] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 02/0 : 11[3] -> 10[2] via P2P/IPC/read
+ga014:116566:116566 [3] NCCL INFO Channel 03/0 : 11[3] -> 10[2] via P2P/IPC/read
+ga011:111048:111048 [2] NCCL INFO Connected all trees
+ga011:111048:111048 [2] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga011:111048:111048 [2] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga011:111048:111048 [2] NCCL INFO comm 0x7a06bb0 rank 2 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga011:111049:111049 [3] NCCL INFO comm 0x7a00a30 rank 3 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga011:111046:111046 [0] NCCL INFO comm 0x79f0a50 rank 0 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+cuFFT provider active for local spectra on each rank.
+ga011:111047:111047 [1] NCCL INFO comm 0x7a06a20 rank 1 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga013:121220:121220 [2] NCCL INFO Connected all trees
+ga013:121220:121220 [2] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga013:121220:121220 [2] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga014:116566:116566 [3] NCCL INFO Connected all trees
+ga014:116566:116566 [3] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga014:116566:116566 [3] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52040:52040 [2] NCCL INFO Connected all trees
+ga015:52040:52040 [2] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga015:52040:52040 [2] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52040:52040 [2] NCCL INFO comm 0x79fc000 rank 14 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga015:52038:52038 [0] NCCL INFO comm 0x7a0cab0 rank 12 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga014:116565:116565 [2] NCCL INFO Connected all trees
+ga014:116565:116565 [2] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga014:116565:116565 [2] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52041:52041 [3] NCCL INFO comm 0x79fbd60 rank 15 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga013:121221:121221 [3] NCCL INFO Connected all trees
+ga013:121221:121221 [3] NCCL INFO threadThresholds 8/8/64 | 128/8/64 | 512 | 512
+ga013:121221:121221 [3] NCCL INFO 4 coll channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+ga015:52039:52039 [1] NCCL INFO comm 0x79fbbe0 rank 13 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga014:116565:116565 [2] NCCL INFO comm 0x79fbe70 rank 10 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga014:116566:116566 [3] NCCL INFO comm 0x79fc130 rank 11 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga013:121221:121221 [3] NCCL INFO comm 0x79f5a90 rank 7 nranks 16 cudaDev 3 nvmlDev 3 busId c1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga014:116563:116563 [0] NCCL INFO comm 0x79fbe80 rank 8 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga013:121217:121217 [0] NCCL INFO comm 0x79fbb80 rank 4 nranks 16 cudaDev 0 nvmlDev 0 busId 1000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga014:116564:116564 [1] NCCL INFO comm 0x79fc000 rank 9 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga013:121219:121219 [1] NCCL INFO comm 0x79d4810 rank 5 nranks 16 cudaDev 1 nvmlDev 1 busId 41000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+ga013:121220:121220 [2] NCCL INFO comm 0x79da8b0 rank 6 nranks 16 cudaDev 2 nvmlDev 2 busId 81000 commId 0xe57d13c3ba5ddf94 - Init COMPLETE
+Rank 2 owns 33554432 strided samples (indices 2 to 536870898).
+Rank 1 owns 33554432 strided samples (indices 1 to 536870897).
+Rank 0 owns 33554432 strided samples (indices 0 to 536870896).
+Generating synthetic multi-tone signal; provide --signal-file for real data.
+Rank 3 owns 33554432 strided samples (indices 3 to 536870899).
+Rank 2 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 2 sample preview: 0:(0.697625,0) 1:(0.697627,0) 2:(0.697628,0) 3:(0.69763,0) 4:(0.697631,0) 5:(0.697632,0) 6:(0.697634,0) 7:(0.697635,0) ...
+[Rank 2] cuFFT context=0x7fffffff8b60 device=2 samples=33554432
+Rank 1 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 1 sample preview: 0:(0.697625,0) 1:(0.697626,0) 2:(0.697628,0) 3:(0.697629,0) 4:(0.697631,0) 5:(0.697632,0) 6:(0.697634,0) 7:(0.697635,0) ...
+[Rank 1] cuFFT context=0x7fffffff8b60 device=1 samples=33554432
+Rank 3 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 3 sample preview: 0:(0.697625,0) 1:(0.697627,0) 2:(0.697628,0) 3:(0.69763,0) 4:(0.697631,0) 5:(0.697633,0) 6:(0.697634,0) 7:(0.697636,0) ...
+[Rank 3] cuFFT context=0x7fffffff8b60 device=3 samples=33554432
+Rank 0 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 0 sample preview: 0:(0.697625,0) 1:(0.697626,0) 2:(0.697628,0) 3:(0.697629,0) 4:(0.697631,0) 5:(0.697632,0) 6:(0.697634,0) 7:(0.697635,0) ...
+[Rank 0] cuFFT context=0x7fffffff8b60 device=0 samples=33554432
+[Rank 2] deviceInput host ptr=0x2aab90001010, sample[0]=(0.697625,0), sample[1]=(0.697627,0)
+[Rank 1] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697625,0), sample[1]=(0.697626,0)
+[Rank 0] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697625,0), sample[1]=(0.697626,0)
+[Rank 0] first input sample before upload=(0.697625,0)
+[Rank 3] deviceInput host ptr=0x2aab90001010, sample[0]=(0.697625,0), sample[1]=(0.697627,0)
+[Rank 2] deviceInput device ptr=0x2aabb2000000 uploaded
+[Rank 1] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 0] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 3] deviceInput device ptr=0x2aabb2000000 uploaded
+[Rank 2] deviceOutput device ptr=0x2aabc2000000 staged
+[Rank 2] cuFFT dispatched
+[Rank 0] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 1] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 3] deviceOutput device ptr=0x2aabc2000000 staged
+[Rank 0] cuFFT dispatched
+[Rank 1] cuFFT dispatched
+[Rank 3] cuFFT dispatched
+[Rank 0] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 1] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 2] deviceOutput host ptr=0x2aaba0002010 post-download
+[Rank 3] deviceOutput host ptr=0x2aaba0002010 post-download
+[Rank 0] first cuFFT output sample=(1.78814e-07,0) (zero spectrum check=no)
+[Rank 0] cuFFT output preview: 0:(1.78814e-07,0) 1:(-7.7337e-06,0) 2:(8.09133e-06,0) 3:(2.37674e-05,0) ...
+[Rank 1] cuFFT output preview: 0:(1.19209e-07,0) 1:(1.75983e-05,0) 2:(8.21054e-06,0) 3:(2.37674e-05,0) ...
+[Rank 2] cuFFT output preview: 0:(1.2517e-06,0) 1:(1.83135e-05,0) 2:(9.16421e-06,0) 3:(2.4721e-05,0) ...
+[Rank 3] cuFFT output preview: 0:(2.20537e-06,0) 1:(1.84327e-05,0) 2:(9.46224e-06,0) 3:(2.59727e-05,0) ...
+Rank 0 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.22604
+Rank 0 local spectrum preview: 0:(1.78814e-07,0) 1:(-7.7337e-06,0) 2:(8.09133e-06,0) 3:(2.37674e-05,0) 4:(1.40816e-05,0) 5:(6.58631e-06,0) 6:(1.03414e-05,0) 7:(1.5378e-05,0)
+Rank 0 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 1 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.23665
+Rank 1 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 2 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.51063
+Rank 2 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 3 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.49648
+Rank 3 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 0 contribution preview (bins rank + m*stride): 0:(1.78814e-07,0) 16:(1.16974e-05,0) 32:(1.41859e-05,0) 48:(-2.5332e-07,0) 64:(4.33624e-06,0) 80:(1.54674e-05,0) 96:(5.39422e-06,0) 112:(-5.36442e-07,0) ...
+Rank 1 contribution preview (bins rank + m*stride): 1:(1.75983e-05,-2.05959e-13) 17:(2.15024e-05,-4.27804e-12) 33:(1.07735e-05,-4.16085e-12) 49:(1.15484e-05,-6.62259e-12) 65:(2.18153e-05,-1.65953e-11) 81:(1.94013e-05,-1.83919e-11) 97:(8.61287e-06,-9.77754e-12) 113:(1.09971e-05,-1.45434e-11) ...
+Rank 2 contribution preview (bins rank + m*stride): 2:(9.16421e-06,-4.29008e-13) 18:(1.50502e-05,-6.34095e-12) 34:(1.11759e-06,-8.89406e-13) 50:(1.44541e-06,-1.69162e-12) 66:(1.41859e-05,-2.1915e-11) 82:(1.02073e-05,-1.95914e-11) 98:(4.61936e-07,-1.05961e-12) 114:(4.97699e-06,-1.32804e-11) ...
+Rank 3 contribution preview (bins rank + m*stride): 3:(2.59727e-05,-2.73571e-12) 19:(1.94013e-05,-1.29424e-11) 35:(9.84967e-06,-1.21038e-11) 51:(2.33054e-05,-4.1731e-11) 67:(2.10255e-05,-4.94599e-11) 83:(1.27107e-05,-3.70406e-11) 99:(1.26213e-05,-4.38702e-11) 115:(2.16365e-05,-8.73606e-11) ...
+Rank 15 owns 33554432 strided samples (indices 15 to 536870911).
+Rank 14 owns 33554432 strided samples (indices 14 to 536870910).
+Rank 12 owns 33554432 strided samples (indices 12 to 536870908).
+Rank 13 owns 33554432 strided samples (indices 13 to 536870909).
+Rank 8 owns 33554432 strided samples (indices 8 to 536870904).
+Rank 11 owns 33554432 strided samples (indices 11 to 536870907).
+Rank 7 owns 33554432 strided samples (indices 7 to 536870903).
+Rank 10 owns 33554432 strided samples (indices 10 to 536870906).
+Rank 4 owns 33554432 strided samples (indices 4 to 536870900).
+Rank 5 owns 33554432 strided samples (indices 5 to 536870901).
+Rank 9 owns 33554432 strided samples (indices 9 to 536870905).
+Rank 6 owns 33554432 strided samples (indices 6 to 536870902).
+Rank 14 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 15 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 14 sample preview: 0:(0.697626,0) 1:(0.697628,0) 2:(0.697629,0) 3:(0.697631,0) 4:(0.697632,0) 5:(0.697634,0) 6:(0.697635,0) 7:(0.697637,0) ...
+[Rank 14] cuFFT context=0x7fffffff8b60 device=2 samples=33554432
+Rank 12 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 12 sample preview: 0:(0.697626,0) 1:(0.697627,0) 2:(0.697629,0) 3:(0.69763,0) 4:(0.697632,0) 5:(0.697633,0) 6:(0.697635,0) 7:(0.697636,0) ...
+[Rank 12] cuFFT context=0x7fffffff8b60 device=0 samples=33554432
+Rank 15 sample preview: 0:(0.697626,0) 1:(0.697628,0) 2:(0.697629,0) 3:(0.697631,0) 4:(0.697632,0) 5:(0.697634,0) 6:(0.697635,0) 7:(0.697637,0) ...
+[Rank 15] cuFFT context=0x7fffffff8b60 device=3 samples=33554432
+Rank 13 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 13 sample preview: 0:(0.697626,0) 1:(0.697628,0) 2:(0.697629,0) 3:(0.697631,0) 4:(0.697632,0) 5:(0.697634,0) 6:(0.697635,0) 7:(0.697636,0) ...
+[Rank 13] cuFFT context=0x7fffffff8b60 device=1 samples=33554432
+Rank 8 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 7 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 10 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 11 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 8 sample preview: 0:(0.697626,0) 1:(0.697627,0) 2:(0.697629,0) 3:(0.69763,0) 4:(0.697632,0) 5:(0.697633,0) 6:(0.697634,0) 7:(0.697636,0) ...
+[Rank 8] cuFFT context=0x7fffffff8b60 device=0 samples=33554432
+Rank 11 sample preview: 0:(0.697626,0) 1:(0.697627,0) 2:(0.697629,0) 3:(0.69763,0) 4:(0.697632,0) 5:(0.697633,0) 6:(0.697635,0) 7:(0.697636,0) ...
+[Rank 11] cuFFT context=0x7fffffff8b50 device=3 samples=33554432
+Rank 4 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 10 sample preview: 0:(0.697626,0) 1:(0.697627,0) 2:(0.697629,0) 3:(0.69763,0) 4:(0.697632,0) 5:(0.697633,0) 6:(0.697635,0) 7:(0.697636,0) ...
+[Rank 10] cuFFT context=0x7fffffff8b50 device=2 samples=33554432
+Rank 5 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 7 sample preview: 0:(0.697626,0) 1:(0.697627,0) 2:(0.697628,0) 3:(0.69763,0) 4:(0.697631,0) 5:(0.697633,0) 6:(0.697634,0) 7:(0.697636,0) ...
+[Rank 7] cuFFT context=0x7fffffff8b60 device=3 samples=33554432
+Rank 9 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 9 sample preview: 0:(0.697626,0) 1:(0.697627,0) 2:(0.697629,0) 3:(0.69763,0) 4:(0.697632,0) 5:(0.697633,0) 6:(0.697635,0) 7:(0.697636,0) ...
+[Rank 9] cuFFT context=0x7fffffff8b60 device=1 samples=33554432
+Rank 5 sample preview: 0:(0.697625,0) 1:(0.697627,0) 2:(0.697628,0) 3:(0.69763,0) 4:(0.697631,0) 5:(0.697633,0) 6:(0.697634,0) 7:(0.697636,0) ...
+Rank 4 sample preview: 0:(0.697625,0) 1:(0.697627,0) 2:(0.697628,0) 3:(0.69763,0) 4:(0.697631,0) 5:(0.697633,0) 6:(0.697634,0) 7:(0.697636,0) ...
+[Rank 5] cuFFT context=0x7fffffff8b60 device=1 samples=33554432
+[Rank 4] cuFFT context=0x7fffffff8b60 device=0 samples=33554432
+Rank 6 local samples stats: max |x|=1.76515, mean |x|=0.693674
+Rank 6 sample preview: 0:(0.697625,0) 1:(0.697627,0) 2:(0.697628,0) 3:(0.69763,0) 4:(0.697631,0) 5:(0.697633,0) 6:(0.697634,0) 7:(0.697636,0) ...
+[Rank 6] cuFFT context=0x7fffffff8b60 device=2 samples=33554432
+[Rank 14] deviceInput host ptr=0x2aab90001010, sample[0]=(0.697626,0), sample[1]=(0.697628,0)
+[Rank 15] deviceInput host ptr=0x2aab90001010, sample[0]=(0.697626,0), sample[1]=(0.697628,0)
+[Rank 12] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697626,0), sample[1]=(0.697627,0)
+[Rank 13] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697626,0), sample[1]=(0.697628,0)
+[Rank 12] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 13] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 14] deviceInput device ptr=0x2aabb2000000 uploaded
+[Rank 15] deviceInput device ptr=0x2aabb2000000 uploaded
+[Rank 11] deviceInput host ptr=0x2aab92001010, sample[0]=(0.697626,0), sample[1]=(0.697627,0)
+[Rank 8] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697626,0), sample[1]=(0.697627,0)
+[Rank 10] deviceInput host ptr=0x2aab92001010, sample[0]=(0.697626,0), sample[1]=(0.697627,0)
+[Rank 4] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697625,0), sample[1]=(0.697627,0)
+[Rank 12] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 5] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697625,0), sample[1]=(0.697627,0)
+[Rank 7] deviceInput host ptr=0x2aab92001010, sample[0]=(0.697626,0), sample[1]=(0.697627,0)
+[Rank 15] deviceOutput device ptr=0x2aabc2000000 staged
+[Rank 13] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 12] cuFFT dispatched
+[Rank 9] deviceInput host ptr=0x2aab8a001010, sample[0]=(0.697626,0), sample[1]=(0.697627,0)
+[Rank 15] cuFFT dispatched
+[Rank 14] deviceOutput device ptr=0x2aabc2000000 staged
+[Rank 14] cuFFT dispatched
+[Rank 8] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 6] deviceInput host ptr=0x2aab92001010, sample[0]=(0.697625,0), sample[1]=(0.697627,0)
+[Rank 13] cuFFT dispatched
+[Rank 10] deviceInput device ptr=0x2aabb4000000 uploaded
+[Rank 4] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 9] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 5] deviceInput device ptr=0x2aabac000000 uploaded
+[Rank 11] deviceInput device ptr=0x2aabb4000000 uploaded
+[Rank 6] deviceInput device ptr=0x2aabb4000000 uploaded
+[Rank 7] deviceInput device ptr=0x2aabb4000000 uploaded
+[Rank 12] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 10] deviceOutput device ptr=0x2aabc4000000 staged
+[Rank 11] deviceOutput device ptr=0x2aabc4000000 staged
+[Rank 13] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 9] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 8] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 5] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 4] deviceOutput device ptr=0x2aabbc000000 staged
+[Rank 8] cuFFT dispatched
+[Rank 10] cuFFT dispatched
+[Rank 6] deviceOutput device ptr=0x2aabc4000000 staged
+[Rank 7] deviceOutput device ptr=0x2aabc4000000 staged
+[Rank 4] cuFFT dispatched
+[Rank 9] cuFFT dispatched
+[Rank 5] cuFFT dispatched
+[Rank 14] deviceOutput host ptr=0x2aaba0002010 post-download
+[Rank 11] cuFFT dispatched
+[Rank 7] cuFFT dispatched
+[Rank 6] cuFFT dispatched
+[Rank 15] deviceOutput host ptr=0x2aaba0002010 post-download
+[Rank 8] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 9] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 4] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 5] deviceOutput host ptr=0x2aab9a002010 post-download
+[Rank 12] cuFFT output preview: 0:(-0.035405,0) 1:(8.38861e+06,1.71545) 2:(-0.259125,1.26367) 3:(7.48751,-1.67772e+07) ...
+[Rank 13] cuFFT output preview: 0:(-0.0292773,0) 1:(8.38861e+06,1.71722) 2:(-0.252304,1.2672) 3:(7.49526,-1.67772e+07) ...
+[Rank 14] cuFFT output preview: 0:(0.0188933,0) 1:(8.38861e+06,1.70747) 2:(-0.217715,1.25542) 3:(7.52643,-1.67772e+07) ...
+[Rank 11] deviceOutput host ptr=0x2aaba2002010 post-download
+[Rank 8] cuFFT output preview: 0:(0.839076,0) 1:(8.38861e+06,1.28288) 2:(-0.0823997,-0.0381758) 3:(5.24792,-1.67772e+07) ...
+[Rank 6] deviceOutput host ptr=0x2aaba2002010 post-download
+[Rank 15] cuFFT output preview: 0:(0.135485,0) 1:(8.38861e+06,1.67419) 2:(-0.122934,1.19264) 3:(7.59645,-1.67772e+07) ...
+[Rank 10] deviceOutput host ptr=0x2aaba2002010 post-download
+[Rank 9] cuFFT output preview: 0:(0.851893,0) 1:(8.38861e+06,0.867521) 2:(-0.846085,0.427718) 3:(6.4284,-1.67772e+07) ...
+[Rank 7] deviceOutput host ptr=0x2aaba2002010 post-download
+[Rank 5] cuFFT output preview: 0:(-5.37932e-06,0) 1:(1.10865e-05,0) 2:(1.51992e-06,0) 3:(1.83731e-05,0) ...
+[Rank 4] cuFFT output preview: 0:(1.71341,0) 1:(8.38861e+06,0.851067) 2:(0.0940447,-1.33998) 3:(3.00844,-1.67772e+07) ...
+[Rank 11] cuFFT output preview: 0:(-9.08971e-07,0) 1:(1.33812e-05,0) 2:(6.18398e-06,0) 3:(2.04593e-05,0) ...
+[Rank 6] cuFFT output preview: 0:(-4.60446e-06,0) 1:(1.18613e-05,0) 2:(2.11596e-06,0) 3:(1.79559e-05,0) ...
+[Rank 10] cuFFT output preview: 0:(0.96858,0) 1:(8.38861e+06,0.8343) 2:(-0.751212,0.364921) 3:(6.49849,-1.67772e+07) ...
+[Rank 7] cuFFT output preview: 0:(-3.76999e-06,0) 1:(1.27554e-05,0) 2:(3.01003e-06,0) 3:(1.87308e-05,0) ...
+Rank 13 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85043
+Rank 12 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85043
+Rank 12 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 13 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 12 contribution preview (bins rank + m*stride): 12:(0.112935,-0.20773) 28:(0.0923444,0.102566) 44:(-0.0486466,0.0416462) 60:(-0.0445536,0.014962) 76:(0.0161044,-0.0448527) 92:(-0.0273229,0.0256517) 108:(0.000988559,-0.00968523) 124:(0.0102191,-0.000955603) ...
+Rank 14 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85043
+Rank 15 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85042
+Rank 13 contribution preview (bins rank + m*stride): 13:(1.4561,-0.794011) 29:(-0.360761,0.105403) 45:(0.209739,0.996132) 61:(0.0755511,0.101108) 77:(-0.36643,0.119941) 93:(-0.471395,0.161152) 109:(0.0123064,0.0982576) 125:(0.0811891,0.146121) ...
+Rank 14 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 8 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85042
+Rank 15 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 9 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85043
+Rank 8 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 14 contribution preview (bins rank + m*stride): 14:(-0.0120188,-1.13981) 30:(-0.11074,0.010409) 46:(-0.0158983,-0.0660866) 62:(0.0493343,-0.0246991) 78:(-0.0292283,-0.0156602) 94:(0.0129902,0.0130918) 110:(0.00624763,-0.0299323) 126:(0.00442165,0.00570221) ...
+Rank 4 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85043
+Rank 5 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.29395
+Rank 15 contribution preview (bins rank + m*stride): 15:(-0.0566813,-1.24611) 31:(0.227111,0.722142) 47:(0.455523,0.0134674) 63:(-0.123132,0.2332) 79:(-0.0984619,0.521245) 95:(0.0565873,0.355822) 111:(-0.0049378,0.0729449) 127:(0.0669178,0.00229972) ...
+Rank 9 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 4 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 5 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 8 contribution preview (bins rank + m*stride): 8:(0.172549,-0.265116) 24:(-0.284246,0.792066) 40:(-0.104341,0.240926) 56:(-0.0150463,0.0508788) 72:(-0.00631679,0.114112) 88:(-0.00804274,0.0697701) 104:(-0.000283605,0.0544406) 120:(-0.0146356,0.0513016) ...
+Rank 9 contribution preview (bins rank + m*stride): 9:(0.54188,0.273032) 25:(0.0507714,0.504758) 41:(0.0292954,0.276173) 57:(-0.0197319,0.155972) 73:(-0.0089589,0.101515) 89:(0.0480891,0.0997197) 105:(-0.0254183,0.0696867) 121:(0.0308037,0.0757394) ...
+Rank 4 contribution preview (bins rank + m*stride): 4:(0.492166,1.52051) 20:(-1.38255,1.97596) 36:(-0.163723,0.306096) 52:(-0.0058061,0.274297) 68:(-0.00441906,0.210782) 84:(-0.0133463,0.142134) 100:(-0.0253063,0.127632) 116:(0.0213532,0.118341) ...
+Rank 5 contribution preview (bins rank + m*stride): 5:(1.56909e-05,-4.59091e-12) 21:(5.23031e-06,-6.42727e-12) 37:(8.77678e-06,-1.90028e-11) 53:(1.52141e-05,-4.71848e-11) 69:(8.47876e-06,-3.42343e-11) 85:(3.30806e-06,-1.6454e-11) 101:(2.41399e-06,-1.42671e-11) 117:(1.71363e-05,-1.17323e-10) ...
+Rank 6 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.67541
+Rank 11 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.51521
+Rank 11 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 6 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 10 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.85043
+Rank 10 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 7 local spectrum stats: max |X|=1.67772e+07, mean |X|=1.17542
+Rank 6 contribution preview (bins rank + m*stride): 6:(6.15418e-06,-2.59288e-12) 22:(-3.66569e-06,5.6629e-12) 38:(1.46031e-06,-3.89665e-12) 54:(4.17233e-06,-1.5821e-11) 70:(-7.45058e-08,3.66226e-13) 86:(-5.1111e-06,3.08655e-11) 102:(-3.44217e-06,2.46543e-11) 118:(7.95722e-06,-6.59333e-11) ...
+Rank 7 assembling contributions with tiled all-reduce (tile size selected for memory bounds).
+Rank 11 contribution preview (bins rank + m*stride): 11:(1.04755e-05,-1.48344e-11) 27:(1.81049e-05,-6.29307e-11) 43:(1.59144e-05,-8.80973e-11) 59:(6.30319e-06,-4.78757e-11) 75:(1.06543e-05,-1.0287e-10) 91:(2.14726e-05,-2.51552e-10) 107:(9.99868e-06,-1.3773e-10) 123:(6.88434e-06,-1.09011e-10) ...
+Rank 10 contribution preview (bins rank + m*stride): 10:(0.711086,-0.349831) 26:(-0.28513,-0.134563) 42:(0.0309988,-0.0760486) 58:(-0.0388906,-0.00199288) 74:(-0.00455783,0.00375853) 90:(-0.0276942,-0.03861) 106:(-0.000829812,-0.000705869) 122:(-0.0240451,0.00512143) ...
+Rank 7 contribution preview (bins rank + m*stride): 7:(9.68575e-06,-5.55443e-12) 23:(6.09457e-06,-1.14836e-11) 39:(1.60486e-05,-5.12753e-11) 55:(1.508e-05,-6.79472e-11) 71:(9.43244e-06,-5.48643e-11) 87:(2.96533e-06,-2.11349e-11) 103:(1.68383e-05,-1.42084e-10) 119:(1.4931e-05,-1.4556e-10) ...
+
+
+
+First 12 frequency bins (partial preview, streaming mode):
+  k=0 : 4.46265  0i  |X|=4.46265
+  k=1 : 6.71089e+07  2.30524i  |X|=6.71089e+07
+  k=2 : -2.43768  4.39341i  |X|=5.02437
+  k=3 : 1.21994  -1.34218e+08i  |X|=1.34218e+08
+  k=4 : -0.638849  -6.73391i  |X|=6.76414
+  k=5 : 2.21398  2.34517i  |X|=3.22514
+  k=6 : 2.88984  -0.909732i  |X|=3.02965
+  k=7 : 3.45176  -2.86849i  |X|=4.48808
+  k=8 : -0.14089  -3.05061i  |X|=3.05386
+  k=9 : 3.73321  0.218392i  |X|=3.73959
+  k=10 : 4.7427  -3.26516i  |X|=5.75799
+  k=11 : 1.32324  -5.83858i  |X|=5.98665
+Dominant bin search skipped (full spectrum not retained).
+Verification settings: direct=off, reference=none, abs tol=0.0001, rel tol=0.001
+Verification disabled; enable with --verify-direct or provide --reference-fft.
+Distributed FFT complete across 16 ranks using NCCL all-reduce.
+ga011:111047:111047 [1] NCCL INFO comm 0x7a06a20 rank 1 nranks 16 cudaDev 1 busId 41000 - Destroy COMPLETE
+ga011:111046:111046 [0] NCCL INFO comm 0x79f0a50 rank 0 nranks 16 cudaDev 0 busId 1000 - Destroy COMPLETE
+ga011:111049:111049 [3] NCCL INFO comm 0x7a00a30 rank 3 nranks 16 cudaDev 3 busId c1000 - Destroy COMPLETE
+ga011:111048:111048 [2] NCCL INFO comm 0x7a06bb0 rank 2 nranks 16 cudaDev 2 busId 81000 - Destroy COMPLETE
+ga015:52038:52038 [0] NCCL INFO comm 0x7a0cab0 rank 12 nranks 16 cudaDev 0 busId 1000 - Destroy COMPLETE
+ga015:52039:52039 [1] NCCL INFO comm 0x79fbbe0 rank 13 nranks 16 cudaDev 1 busId 41000 - Destroy COMPLETE
+ga013:121219:121219 [1] NCCL INFO comm 0x79d4810 rank 5 nranks 16 cudaDev 1 busId 41000 - Destroy COMPLETE
+ga013:121217:121217 [0] NCCL INFO comm 0x79fbb80 rank 4 nranks 16 cudaDev 0 busId 1000 - Destroy COMPLETE
+ga014:116563:116563 [0] NCCL INFO comm 0x79fbe80 rank 8 nranks 16 cudaDev 0 busId 1000 - Destroy COMPLETE
+ga014:116564:116564 [1] NCCL INFO comm 0x79fc000 rank 9 nranks 16 cudaDev 1 busId 41000 - Destroy COMPLETE
+ga015:52041:52041 [3] NCCL INFO comm 0x79fbd60 rank 15 nranks 16 cudaDev 3 busId c1000 - Destroy COMPLETE
+ga013:121221:121221 [3] NCCL INFO comm 0x79f5a90 rank 7 nranks 16 cudaDev 3 busId c1000 - Destroy COMPLETE
+ga014:116566:116566 [3] NCCL INFO comm 0x79fc130 rank 11 nranks 16 cudaDev 3 busId c1000 - Destroy COMPLETE
+ga015:52040:52040 [2] NCCL INFO comm 0x79fc000 rank 14 nranks 16 cudaDev 2 busId 81000 - Destroy COMPLETE
+ga013:121220:121220 [2] NCCL INFO comm 0x79da8b0 rank 6 nranks 16 cudaDev 2 busId 81000 - Destroy COMPLETE
+ga014:116565:116565 [2] NCCL INFO comm 0x79fbe70 rank 10 nranks 16 cudaDev 2 busId 81000 - Destroy COMPLETE
+[yusufo81@hemera5 build]$

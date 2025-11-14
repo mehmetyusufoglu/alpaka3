@@ -21,15 +21,15 @@
 #include "alpaka/interface.hpp"
 #include "alpaka/internal/interface.hpp"
 #include "alpaka/math.hpp"
+#include "alpaka/math/Complex.hpp"
 #include "alpaka/math/constants.hpp"
-#include "alpaka/math/internal/Complex.hpp"
 #include "alpaka/mem/BoundaryIter.hpp"
 #include "alpaka/mem/Iter.hpp"
 #include "alpaka/mem/LinearizedIdxGenerator.hpp"
 #include "alpaka/onAcc/Acc.hpp"
-#include "alpaka/onAcc/GlobalMem.hpp"
 #include "alpaka/onAcc/SimdAlgo.hpp"
 #include "alpaka/onAcc/atomic.hpp"
+#include "alpaka/onAcc/globalMem.hpp"
 #include "alpaka/onAcc/interface.hpp"
 #include "alpaka/onAcc/memFence.hpp"
 #include "alpaka/onAcc/tag.hpp"
@@ -47,7 +47,10 @@
 #include "alpaka/onHost/logger/logger.hpp"
 #include "alpaka/onHost/mem/stdContainer.hpp"
 #include "alpaka/tag.hpp"
-#include "alpaka/utility.hpp"
+#include "alpaka/tensor.hpp"
+#include "utility.hpp"
+
+#include <alpaka/onHost/demangledName.hpp>
 
 /** main alpaka namespace.
  *

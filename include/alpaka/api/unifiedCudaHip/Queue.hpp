@@ -3,28 +3,30 @@
  */
 #pragma once
 
+#include "alpaka/api/concepts/api.hpp"
+#include "alpaka/api/cuda/IdxLayer.hpp"
+#include "alpaka/api/generic.hpp"
+#include "alpaka/api/hip/IdxLayer.hpp"
+#include "alpaka/api/unifiedCudaHip/ComputeApi.hpp"
+#include "alpaka/api/unifiedCudaHip/Event.hpp"
+#include "alpaka/api/unifiedCudaHip/MemcpyKind.hpp"
+#include "alpaka/api/unifiedCudaHip/concepts.hpp"
+#include "alpaka/api/util.hpp"
+#include "alpaka/core/CallbackThread.hpp"
+#include "alpaka/core/UniformCudaHip.hpp"
 #include "alpaka/core/config.hpp"
+#include "alpaka/internal/interface.hpp"
+#include "alpaka/onAcc/Acc.hpp"
+#include "alpaka/onAcc/internal/globalMem.hpp"
+#include "alpaka/onHost/FrameSpec.hpp"
+#include "alpaka/onHost/Handle.hpp"
+#include "alpaka/onHost/interface.hpp"
+#include "alpaka/onHost/internal/interface.hpp"
+#include "alpaka/onHost/mem/SharedBuffer.hpp"
 
 #if ALPAKA_LANG_CUDA || ALPAKA_LANG_HIP
-#    include "alpaka/api/concepts/api.hpp"
-#    include "alpaka/api/cuda/IdxLayer.hpp"
-#    include "alpaka/api/generic.hpp"
-#    include "alpaka/api/hip/IdxLayer.hpp"
-#    include "alpaka/api/unifiedCudaHip/ComputeApi.hpp"
-#    include "alpaka/api/unifiedCudaHip/Event.hpp"
-#    include "alpaka/api/unifiedCudaHip/MemcpyKind.hpp"
-#    include "alpaka/api/unifiedCudaHip/concepts.hpp"
-#    include "alpaka/api/util.hpp"
+
 #    include "alpaka/core/ApiCudaRt.hpp"
-#    include "alpaka/core/CallbackThread.hpp"
-#    include "alpaka/core/UniformCudaHip.hpp"
-#    include "alpaka/internal/interface.hpp"
-#    include "alpaka/onAcc/Acc.hpp"
-#    include "alpaka/onHost/FrameSpec.hpp"
-#    include "alpaka/onHost/Handle.hpp"
-#    include "alpaka/onHost/interface.hpp"
-#    include "alpaka/onHost/internal/interface.hpp"
-#    include "alpaka/onHost/mem/SharedBuffer.hpp"
 
 #    include <cstdint>
 #    include <sstream>
@@ -160,6 +162,7 @@ namespace alpaka::onHost
 
             friend struct alpaka::internal::GetApi;
             friend struct onHost::internal::Memcpy;
+            friend struct onHost::internal::MemcpyDeviceGlobal;
             friend struct onHost::internal::Memset;
             friend struct onHost::internal::AllocDeferred;
             friend struct CallKernel;
@@ -455,8 +458,8 @@ namespace alpaka::onHost
                     ApiInterface,
                     ApiInterface::setDevice(onHost::getNativeHandle(queue.m_device)));
 
-                auto* destPtr = (void*) onHost::data(dest);
-                auto* const srcPtr = (void*) onHost::data(source);
+                void* destPtr = toVoidPtr(onHost::data(dest));
+                void const* srcPtr = toVoidPtr(onHost::data(source));
 
                 auto copyKind = unifiedCudaHip::MemcpyKind<
                     ApiInterface,
@@ -497,7 +500,8 @@ namespace alpaka::onHost
                     typename ApiInterface::Memcpy3DParms_t memCpy3DParms{};
 
                     memCpy3DParms.srcPtr = ApiInterface::makePitchedPtr(
-                        srcPtr,
+                        // CUDA/HIP does not support const for pitched pointer
+                        const_cast<void*>(srcPtr),
                         source.getPitches().y(),
                         source.getExtents().x(),
                         source.getExtents().y());
@@ -516,6 +520,79 @@ namespace alpaka::onHost
                         ApiInterface,
                         ApiInterface::memcpy3DAsync(&memCpy3DParms, internal::getNativeHandle(queue)));
                 }
+
+                queue.conditionalWait();
+            }
+        };
+
+        // copy to device global memory
+        template<typename T_Device, typename T_Source, typename T_Storage, typename T>
+        struct internal::MemcpyDeviceGlobal::
+            Op<unifiedCudaHip::Queue<T_Device>, onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T>, T_Source>
+        {
+            void operator()(
+                unifiedCudaHip::Queue<T_Device>& queue,
+                onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T> dest,
+                auto&& source) const
+            {
+                ALPAKA_LOG_FUNCTION(onHost::logger::memory + onHost::logger::queue);
+
+                using ApiInterface = typename unifiedCudaHip::Queue<T_Device>::ApiInterface;
+                auto queueApi = alpaka::internal::getApi(queue);
+                auto copyKind = unifiedCudaHip::
+                    MemcpyKind<ApiInterface, ALPAKA_TYPEOF(queueApi), ALPAKA_TYPEOF(api::host)>::kind;
+
+                void* destPtr{nullptr};
+                void const* srcPtr{nullptr};
+                if constexpr(std::is_pointer_v<ALPAKA_TYPEOF(source)>)
+                    srcPtr = source;
+                else
+                    srcPtr = toVoidPtr(alpaka::onHost::data(ALPAKA_FORWARD(source)));
+
+                ALPAKA_UNIFORM_CUDA_HIP_RT_CHECK(
+                    ApiInterface,
+                    ApiInterface::getSymbolAddress(reinterpret_cast<void**>(&destPtr), dest.getHandle(queueApi)));
+
+                ALPAKA_UNIFORM_CUDA_HIP_RT_CHECK(
+                    ApiInterface,
+                    ApiInterface::memcpyAsync(destPtr, srcPtr, sizeof(T), copyKind, internal::getNativeHandle(queue)));
+
+                queue.conditionalWait();
+            }
+        };
+
+        // copy from device global memory
+        template<typename T_Device, typename T_Dest, typename T_Storage, typename T>
+        struct internal::MemcpyDeviceGlobal::
+            Op<unifiedCudaHip::Queue<T_Device>, T_Dest, onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T>>
+        {
+            void operator()(
+                unifiedCudaHip::Queue<T_Device>& queue,
+                auto&& dest,
+                onAcc::internal::GlobalDeviceMemoryWrapper<T_Storage, T> source) const
+            {
+                ALPAKA_LOG_FUNCTION(onHost::logger::memory + onHost::logger::queue);
+
+                using ApiInterface = typename unifiedCudaHip::Queue<T_Device>::ApiInterface;
+                auto queueApi = alpaka::internal::getApi(queue);
+                auto copyKind = unifiedCudaHip::
+                    MemcpyKind<ApiInterface, ALPAKA_TYPEOF(api::host), ALPAKA_TYPEOF(queueApi)>::kind;
+
+                void* destPtr{nullptr};
+                if constexpr(std::is_pointer_v<ALPAKA_TYPEOF(dest)>)
+                    destPtr = dest;
+                else
+                    destPtr = toVoidPtr(alpaka::onHost::data(ALPAKA_FORWARD(dest)));
+
+                void* srcPtr{nullptr};
+
+                ALPAKA_UNIFORM_CUDA_HIP_RT_CHECK(
+                    ApiInterface,
+                    ApiInterface::getSymbolAddress(reinterpret_cast<void**>(&srcPtr), source.getHandle(queueApi)));
+
+                ALPAKA_UNIFORM_CUDA_HIP_RT_CHECK(
+                    ApiInterface,
+                    ApiInterface::memcpyAsync(destPtr, srcPtr, sizeof(T), copyKind, internal::getNativeHandle(queue)));
 
                 queue.conditionalWait();
             }
@@ -541,7 +618,7 @@ namespace alpaka::onHost
                     ApiInterface,
                     ApiInterface::setDevice(onHost::getNativeHandle(queue.m_device)));
 
-                auto* destPtr = (void*) onHost::data(dest);
+                void* destPtr = toVoidPtr(onHost::data(dest));
 
                 constexpr auto dim = alpaka::trait::getDim_v<T_Extents>;
                 if constexpr(dim == 1u)
