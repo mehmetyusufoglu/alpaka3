@@ -204,6 +204,7 @@ namespace alpaka::tensor
             }
         };
 
+        // CUDA specialization: route tensor ops into NVIDIA vendor libraries when available.
         template<>
         struct backend_dispatch<alpaka::exec::GpuCuda>
         {
@@ -223,6 +224,11 @@ namespace alpaka::tensor
             {
                 if constexpr(EnabledVendorLibs::hasCUFFT)
                 {
+                    // We already have the concrete cuFFT provider living behind the opaque
+                    // IOpProvider pointer, so attempting the dynamic cast here either exposes the
+                    // concrete CuFFTProvider (success path) or leaves us with a graceful false return.
+                    // This survives both eager and lazy cuFFT initialisation because the provider is
+                    // created during CleanTensorOpContext construction based on enabled vendor libs.
                     if(detail::tryInvokeProvider<CuFFTProvider>(provider, std::forward<Fn>(fn)))
                         return true;
                 }
@@ -298,6 +304,7 @@ namespace alpaka::tensor
             }
         };
 
+        // HIP specialization: funnel operations through ROCm vendor libraries.
         template<>
         struct backend_dispatch<alpaka::exec::GpuHip>
         {
@@ -315,6 +322,7 @@ namespace alpaka::tensor
             template<typename Fn>
             static bool fft(IOpProvider& provider, Fn&& fn)
             {
+                // TODO(hip): Implement rocFFT provider plumbing once FFT bindings are available.
                 static_cast<void>(provider);
                 static_cast<void>(fn);
                 return false;

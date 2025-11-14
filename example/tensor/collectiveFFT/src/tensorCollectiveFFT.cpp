@@ -260,6 +260,8 @@ namespace
 
             std::vector<std::complex<float>> localSamples;
             std::string chunkError;
+            // Stage 1: pull the strided slice of the global signal that belongs to this rank
+            // into host memory (either from file or from the synthetic generator).
             bool const chunkOk = loadSignalChunk(
                 options,
                 samplesPerRank,
@@ -331,6 +333,8 @@ namespace
                           << " samples=" << samplesPerRank << '\n';
 
 
+                // Stage 2: allocate device resident tensors that map 1:1 onto the
+                // cuFFT input/output buffers managed by CleanTensorOpContext.
                 tt::Tensor1D<std::complex<float>, Device> deviceInput(device, {samplesPerRank}, "fft-local-input");
                 tt::Tensor1D<std::complex<float>, Device> deviceOutput(device, {samplesPerRank}, "fft-local-output");
 
@@ -379,6 +383,9 @@ namespace
                 bool fftFailed = false;
                 try
                 {
+                    // Stage 3: ask the CleanTensorOpContext to execute its FFT provider.
+                    // On CUDA this drops into the cuFFT plan cached inside the context,
+                    // writing frequency-domain coefficients into deviceOutput.
                     context.fft(deviceInput, deviceOutput, fftParams);
                     std::cout << "[Rank " << groupConfig.worldRank << "] cuFFT dispatched" << '\n';
                     deviceOutput.markDeviceModified(device, queue);
@@ -388,6 +395,8 @@ namespace
                     alpaka::onHost::wait(queue);
 
                     auto const* hostOutputPtr = deviceOutput.hostData();
+                    // Stage 4: capture the cuFFT spectrum back on the host so the
+                    // subsequent tiled reduction can work in CPU memory.
                     std::cout << "[Rank " << groupConfig.worldRank
                               << "] deviceOutput host ptr=" << static_cast<void const*>(hostOutputPtr)
                               << " post-download" << '\n';
@@ -429,6 +438,7 @@ namespace
                     }
                     else
                     {
+                        // Persist fft() results back on the host for later phase correction and reduction.
                         localSpectrum = std::move(deviceSpectrum);
                     }
                 }
@@ -489,8 +499,13 @@ namespace
                     std::cout << '\n';
                 }
             }
-
-            // Version 2 pipeline step 4: stream the global spectrum in tiles so we never allocate N-sized buffers.
+            /**
+             * Version 2 pipeline step 4: stream the global spectrum back in fixed-size tiles rather than
+             * allocating an N-length buffer per rank. Each pass uploads only tileCapacity bins to the GPU,
+             * runs the NCCL all-reduce on that slice, and copies the reduced result to host. The reuse of
+             * those buffers keeps memory bounded regardless of the global FFT length and lets very large
+             * signals complete without exhausting device or host space.
+             */
             std::cout << "Rank " << groupConfig.worldRank
                       << " assembling contributions with tiled all-reduce (tile size selected for memory bounds).\n";
 

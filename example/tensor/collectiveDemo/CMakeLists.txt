@@ -32,8 +32,11 @@ if(MPI_FOUND)
         target_link_libraries(tensorCollectiveDemo PUBLIC ${_alpaka_tensor_collective_mpi_target})
         target_compile_definitions(tensorCollectiveDemo PRIVATE ALPAKA_TENSOR_COLLECTIVE_DEMO_HAS_MPI)
     else()
-        message(STATUS "MPI discovered but no usable imported target (MPI::MPI_CXX or MPI::MPI_C); "
-                        "tensorCollectiveDemo will run single-rank only.")
+        message(
+            STATUS
+            "MPI discovered but no usable imported target (MPI::MPI_CXX or MPI::MPI_C); "
+            "tensorCollectiveDemo will run single-rank only."
+        )
     endif()
 else()
     message(STATUS "MPI not found; tensorCollectiveDemo will build without multi-rank support.")
